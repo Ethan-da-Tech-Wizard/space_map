@@ -90,22 +90,10 @@ void Scanner::start(const std::string& root_path) {
     // Pre-allocate task queue to avoid repeated heap reallocations during scan burst
     m_task_queue.reserve(4096);
 
-    // Determine optimal thread count based on platform and core count.
-    // Scanning is I/O-bound, so more threads than physical cores causes
-    // context-switching overhead and HDD head thrashing on spinning disks.
+    // Use all available logical cores. Scanning is I/O-bound and SSDs handle
+    // parallel random reads efficiently, so hyperthreaded cores still help.
     unsigned int num_threads = std::thread::hardware_concurrency();
-    if (num_threads == 0) num_threads = 2;
-#ifdef __APPLE__
-    // macOS hardware_concurrency() returns logical cores (hyperthreaded).
-    // On dual-core machines (e.g. 2017 MBP), this returns 4 but only 2
-    // physical cores exist. For I/O-bound scanning on APFS/HDD, cap to
-    // physical cores to avoid context-switch overhead and disk thrashing.
-    // Dividing by 2 gives physical cores on Intel Macs; on Apple Silicon
-    // (which has >=4 performance cores), the result is still generous.
-    unsigned int physical_cores = num_threads / 2;
-    if (physical_cores < 2) physical_cores = 2;
-    num_threads = physical_cores;
-#endif
+    if (num_threads == 0) num_threads = 4;
 
     m_active_workers = num_threads;
     m_workers.reserve(num_threads);
@@ -308,5 +296,5 @@ void Scanner::test_scanner() {
     // Clean up files
     std::filesystem::remove_all(test_dir);
 
-    std::cout << "Scanner tests passed successfully!" << std::endl;
+    std::cout << "Scanner tests passed successfully!" << "\n";
 }

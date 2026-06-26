@@ -58,16 +58,22 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
     while ((entry = readdir(dir)) != nullptr) {
         if (m_cancelled) [[unlikely]] break;
 
-        std::string name = entry->d_name;
-        if (name == "." || name == "..") continue;
+        // Use raw C-string length check to avoid std::string allocation for skipped entries
+        const char* d_name = entry->d_name;
+        if (d_name[0] == '.') {
+            if (d_name[1] == '\0') continue;                    // "."
+            if (d_name[1] == '.' && d_name[2] == '\0') continue; // ".."
+        }
+
+        size_t name_len = strlen(d_name);
 
         // Security check: Ignore abnormally long filenames (max 255 bytes)
-        if (name.length() > 255) continue;
+        if (name_len > 255) continue;
 
         // Security check: Ignore names containing dangerous control/escape characters (ASCII < 32)
         bool has_invalid_char = false;
-        for (char c : name) {
-            if (static_cast<unsigned char>(c) < 32) {
+        for (size_t i = 0; i < name_len; ++i) {
+            if (static_cast<unsigned char>(d_name[i]) < 32) {
                 has_invalid_char = true;
                 break;
             }
@@ -78,7 +84,8 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
         if (entry->d_type == DT_LNK) continue;
 
         if (entry->d_type == DT_DIR) {
-            std::string full_path = current_path == "/" ? "/" + name : current_path + "/" + name;
+            std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
+                                                        : current_path + "/" + std::string(d_name, name_len);
             // Ignore virtual/pseudo-filesystems
             if (full_path == "/proc" || full_path == "/sys" || full_path == "/dev" || full_path == "/run") {
                 continue;
@@ -86,18 +93,18 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
 
             // Check for mount/bind cycles using inode dev IDs via fast fstatat
             struct stat st;
-            if (fstatat(dfd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+            if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
                 DirId id{st.st_dev, st.st_ino};
                 {
                     std::lock_guard<std::mutex> lock(m_visited_mutex);
-                    if (m_visited_dirs.count(id)) {
+                    if (m_visited_dirs.contains(id)) {
                         continue;
                     }
                     m_visited_dirs.insert(id);
                 }
             }
 
-            TreeNode* child = parent_node->get_or_create_child(name, true);
+            TreeNode* child = parent_node->get_or_create_child(std::string_view(d_name, name_len), true);
             add_task(full_path, child);
             dir_subdirs_count++;
         } else if (entry->d_type == DT_REG) {
@@ -107,25 +114,25 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
 #if defined(SYS_statx)
             struct statx stx;
             // Pass dfd and relative entry name to statx (avoids full path allocation)
-            if (syscall(SYS_statx, dfd, entry->d_name, AT_SYMLINK_NOFOLLOW, STATX_SIZE | STATX_BLOCKS, &stx) == 0) {
+            if (syscall(SYS_statx, dfd, d_name, AT_SYMLINK_NOFOLLOW, STATX_SIZE | STATX_BLOCKS, &stx) == 0) {
                 fsize = stx.stx_size;
                 allocated_size = stx.stx_blocks * 512;
             } else {
                 struct stat st;
-                if (fstatat(dfd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+                if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
                     fsize = st.st_size;
                     allocated_size = st.st_blocks * 512;
                 }
             }
 #else
             struct stat st;
-            if (fstatat(dfd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+            if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
                 fsize = st.st_size;
                 allocated_size = st.st_blocks * 512;
             }
 #endif
 
-            TreeNode* child = parent_node->get_or_create_child(name, false);
+            TreeNode* child = parent_node->get_or_create_child(std::string_view(d_name, name_len), false);
             {
                 std::unique_lock<std::shared_mutex> child_lock(child->mutex);
                 child->size = fsize;
@@ -139,25 +146,26 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
         } else if (entry->d_type == DT_UNKNOWN) {
             // Fallback for filesystems that do not return d_type
             struct stat st;
-            if (fstatat(dfd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+            if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
                 if (S_ISDIR(st.st_mode)) {
-                    std::string full_path = current_path == "/" ? "/" + name : current_path + "/" + name;
+                    std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
+                                                                : current_path + "/" + std::string(d_name, name_len);
                     if (full_path == "/proc" || full_path == "/sys" || full_path == "/dev" || full_path == "/run") {
                         continue;
                     }
                     DirId id{st.st_dev, st.st_ino};
                     {
                         std::lock_guard<std::mutex> lock(m_visited_mutex);
-                        if (m_visited_dirs.count(id)) {
+                        if (m_visited_dirs.contains(id)) {
                             continue;
                         }
                         m_visited_dirs.insert(id);
                     }
-                    TreeNode* child = parent_node->get_or_create_child(name, true);
+                    TreeNode* child = parent_node->get_or_create_child(std::string_view(d_name, name_len), true);
                     add_task(full_path, child);
                     dir_subdirs_count++;
                 } else if (S_ISREG(st.st_mode)) {
-                    TreeNode* child = parent_node->get_or_create_child(name, false);
+                    TreeNode* child = parent_node->get_or_create_child(std::string_view(d_name, name_len), false);
                     {
                         std::unique_lock<std::shared_mutex> child_lock(child->mutex);
                         child->size = st.st_size;
