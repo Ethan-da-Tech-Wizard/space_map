@@ -62,7 +62,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
                 DirId id{st.st_dev, st.st_ino};
                 {
                     std::lock_guard<std::mutex> lock(m_visited_mutex);
-                    if (m_visited_dirs.count(id)) {
+                    if (m_visited_dirs.contains(id)) {
                         continue;
                     }
                     m_visited_dirs.insert(id);
@@ -103,7 +103,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
                     DirId id{st.st_dev, st.st_ino};
                     {
                         std::lock_guard<std::mutex> lock(m_visited_mutex);
-                        if (m_visited_dirs.count(id)) {
+                        if (m_visited_dirs.contains(id)) {
                             continue;
                         }
                         m_visited_dirs.insert(id);
