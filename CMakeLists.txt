@@ -70,11 +70,28 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 # causes a fatal linker error. Qt 6.8 was built with AGL support on older SDKs
 # and bakes the reference into its imported target properties.
 if(APPLE)
-    # Discover every imported target in this directory scope
-    get_property(_all_imported_targets DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY IMPORTED_TARGETS)
-    foreach(_target ${_all_imported_targets})
-        # Only process Qt6 targets
-        if(_target MATCHES "^Qt6::")
+    # Define an explicit list of Qt6 targets to patch, as they may be global imported targets
+    # and not listed in the directory-local IMPORTED_TARGETS property.
+    set(_qt_targets
+        Qt6::Gui
+        Qt6::GuiPrivate
+        Qt6::Widgets
+        Qt6::WidgetsPrivate
+        Qt6::Core
+        Qt6::CorePrivate
+        Qt6::Platform
+        Qt6::QMacStylePlugin
+    )
+    
+    # Also discover any directory-scope imported targets
+    get_property(_dir_targets DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY IMPORTED_TARGETS)
+    if(_dir_targets)
+        list(APPEND _qt_targets ${_dir_targets})
+    endif()
+    list(REMOVE_DUPLICATES _qt_targets)
+
+    foreach(_target ${_qt_targets})
+        if(TARGET ${_target})
             # Strip from every property that can carry linker flags
             foreach(_prop
                 INTERFACE_LINK_LIBRARIES
