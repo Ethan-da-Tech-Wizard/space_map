@@ -9,8 +9,28 @@ An ultra-low-latency, memory-optimized native desktop application that scans, an
 If you do not want to build from source, you can download a pre-packaged standalone version for your operating system directly from the **[GitHub Releases](https://github.com/Ethan-da-Tech-Wizard/space_map/releases)** page:
 
 * **🪟 Windows**: Download `SpaceMap-Windows-x64.zip`. Extract the folder and double-click `SpaceMap.exe` to run.
-* **🍏 macOS**: Download `SpaceMap-macOS.dmg`. Open the DMG file and drag `SpaceMap.app` to your `Applications` folder, then launch it.
+* **🍏 macOS**: Download `SpaceMap-macOS.dmg`. Open the DMG file and drag `SpaceMap.app` to your `Applications` folder, then launch it. (See the Gatekeeper section below if you get a developer verification warning).
 * **🐧 Linux**: Download `SpaceMap-Linux.AppImage`. Make the file executable (right-click -> Properties -> Allow executing, or run `chmod +x SpaceMap-Linux.AppImage` in the terminal), then run.
+
+---
+
+### 🍏 macOS Gatekeeper Security Warning Bypass
+
+Because the macOS binary is compiled on GitHub Actions without an expensive Apple Developer signing certificate, macOS will show a warning saying **"SpaceMap cannot be opened because the developer cannot be verified"**.
+
+You can bypass this easily using one of these two methods:
+
+#### Method 1: The Finder Right-Click Method (Recommended)
+1. Open your **Applications** folder in Finder.
+2. **Control-click** (or right-click) the `SpaceMap` app icon.
+3. Select **Open** from the context menu.
+4. Click **Open** in the warning dialog. The app will now launch, and macOS will remember this preference so you can double-click to open it normally in the future.
+
+#### Method 2: The Terminal Command Method
+If the first method doesn't work, open **Terminal** and run the following command to remove the quarantine flag:
+```bash
+xattr -cr /Applications/SpaceMap.app
+```
 
 ---
 
