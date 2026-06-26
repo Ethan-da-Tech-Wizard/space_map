@@ -65,15 +65,32 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
-# Patch Qt6 imported targets to strip deprecated AGL framework on macOS
+# Patch ALL Qt6 imported targets to strip the deprecated AGL framework on macOS.
+# Modern macOS SDKs (Xcode 15+) removed AGL entirely, so any reference to it
+# causes a fatal linker error. Qt 6.8 was built with AGL support on older SDKs
+# and bakes the reference into its imported target properties.
 if(APPLE)
-    foreach(qt_target Qt6::Gui Qt6::GuiPrivate Qt6::Widgets Qt6::WidgetsPrivate)
-        if(TARGET ${qt_target})
-            get_target_property(libs ${qt_target} INTERFACE_LINK_LIBRARIES)
-            if(libs)
-                string(REPLACE "-framework AGL" "" clean_libs "${libs}")
-                set_target_properties(${qt_target} PROPERTIES INTERFACE_LINK_LIBRARIES "${clean_libs}")
-            endif()
+    # Discover every imported target in this directory scope
+    get_property(_all_imported_targets DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY IMPORTED_TARGETS)
+    foreach(_target ${_all_imported_targets})
+        # Only process Qt6 targets
+        if(_target MATCHES "^Qt6::")
+            # Strip from every property that can carry linker flags
+            foreach(_prop
+                INTERFACE_LINK_LIBRARIES
+                IMPORTED_LINK_INTERFACE_LIBRARIES
+                IMPORTED_LINK_INTERFACE_LIBRARIES_RELEASE
+                IMPORTED_LINK_INTERFACE_LIBRARIES_RELWITHDEBINFO
+                IMPORTED_LINK_INTERFACE_LIBRARIES_MINSIZEREL
+                IMPORTED_LINK_INTERFACE_LIBRARIES_DEBUG
+                IMPORTED_LINK_INTERFACE_LIBRARIES_NOCONFIG
+            )
+                get_target_property(_libs ${_target} ${_prop})
+                if(_libs)
+                    string(REPLACE "-framework AGL" "" _clean "${_libs}")
+                    set_target_properties(${_target} PROPERTIES ${_prop} "${_clean}")
+                endif()
+            endforeach()
         endif()
     endforeach()
 endif()
@@ -109,3 +126,9 @@ else()
 endif()
 
 target_link_libraries(SpaceMap PRIVATE Qt6::Widgets)
+
+# Final safety net: tell the macOS linker to treat AGL as an optional weak framework.
+# If AGL exists, it links weakly; if it doesn't exist, the linker silently ignores it.
+if(APPLE)
+    target_link_options(SpaceMap PRIVATE "LINKER:-weak_framework,AGL")
+endif()
