@@ -64,6 +64,9 @@ jobs:
       - name: Package Standalone Application (macOS)
         if: matrix.os == 'macos-latest'
         run: |
+          # Copy dummy AGL framework to system search path so macdeployqt can resolve it
+          sudo mkdir -p /Library/Frameworks
+          sudo cp -R build/dummy_frameworks/AGL.framework /Library/Frameworks/
           macdeployqt build/SpaceMap.app -dmg
           mv build/SpaceMap.dmg SpaceMap-macOS.dmg
 
