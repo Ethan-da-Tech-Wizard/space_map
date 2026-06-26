@@ -196,79 +196,22 @@ This chapter explains the complete CMake configuration. CMake is a cross-platfor
 
 ```cmake
 68: # Patch ALL Qt6 imported targets to strip the deprecated AGL framework on macOS.
-69: # Modern macOS SDKs (Xcode 15+) removed AGL entirely, so any reference to it
-70: # causes a fatal linker error. Qt 6.8 was built with AGL support on older SDKs
-71: # and bakes the reference into its imported target properties.
-72: if(APPLE)
-73:     # Define an explicit list of Qt6 and system targets to patch, as they may be global imported targets
-74:     # and not listed in the directory-local IMPORTED_TARGETS property.
-75:     set(_qt_targets
-76:         Qt6::Gui
-77:         Qt6::GuiPrivate
-78:         Qt6::Widgets
-79:         Qt6::WidgetsPrivate
-80:         Qt6::Core
-81:         Qt6::CorePrivate
-82:         Qt6::Platform
-83:         Qt6::QMacStylePlugin
-84:         WrapOpenGL::WrapOpenGL
-85:         OpenGL::GL
-86:     )
-87:     
-88:     # Also discover any directory-scope imported targets
-89:     get_property(_dir_targets DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY IMPORTED_TARGETS)
-90:     if(_dir_targets)
-91:         list(APPEND _qt_targets ${_dir_targets})
-92:     endif()
-93:     list(REMOVE_DUPLICATES _qt_targets)
-94: 
-95:     foreach(_target ${_qt_targets})
-96:         if(TARGET ${_target})
-97:             # Strip from every property that can carry linker flags
-98:             foreach(_prop
-99:                 INTERFACE_LINK_LIBRARIES
-100:                 IMPORTED_LINK_INTERFACE_LIBRARIES
-101:                 IMPORTED_LINK_INTERFACE_LIBRARIES_RELEASE
-102:                 IMPORTED_LINK_INTERFACE_LIBRARIES_RELWITHDEBINFO
-103:                 IMPORTED_LINK_INTERFACE_LIBRARIES_MINSIZEREL
-104:                 IMPORTED_LINK_INTERFACE_LIBRARIES_DEBUG
-105:                 IMPORTED_LINK_INTERFACE_LIBRARIES_NOCONFIG
-106:             )
-107:                 get_target_property(_libs ${_target} ${_prop})
-108:                 if(_libs)
-109:                     string(REPLACE "-framework AGL" "" _clean "${_libs}")
-110:                     set_target_properties(${_target} PROPERTIES ${_prop} "${_clean}")
-111:                 endif()
-112:             endforeach()
-113:         endif()
-114:     endforeach()
+...
 115: endif()
 ```
-* **Explanation**:
-  * Since Qt 6.8.0 was precompiled on macOS environments referencing the legacy AGL framework, those references are baked into the imported target configuration properties of the Qt6 package.
-  * This script queries all CMake targets associated with Qt6, iterates over their linker dependency properties, and strips out `-framework AGL`. This is critical to prevent the linker from searching for a non-existent system framework on newer macOS systems.
+* **Explanation**: Links properties cleanup code to prevent legacy AGL linker dependency issues on macOS compilations.
 
 ```cmake
-117: # Include source directories
 118: include_directories(src)
 ```
-* **Explanation**: 
-  * Instructs the compiler to add the `src/` directory to its header search paths, allowing includes like `#include "tree_node.hpp"` to resolve relative to `src/` without using relative dots (e.g. `#include "../tree_node.hpp"`).
+* **Explanation**: Registers the source directory for absolute path resolution.
 
 ```cmake
 121: set(SOURCES
-122:     src/main.cpp
-123:     src/main_window.cpp
-124:     src/main_window.hpp
-125:     src/tree_node.cpp
-126:     src/tree_node.hpp
-127:     src/scanner.cpp
-128:     src/scanner.hpp
-129:     src/file_tree_model.cpp
-130:     src/file_tree_model.hpp
+...
 131: )
 ```
-* **Explanation**: Declares a variable list `SOURCES` containing the files needed to build the core application.
+* **Explanation**: Specifies list of files for compiler parsing.
 
 ```cmake
 133: if(WIN32)
@@ -279,11 +222,7 @@ This chapter explains the complete CMake configuration. CMake is a cross-platfor
 138:     list(APPEND SOURCES src/platform/scanner_linux.cpp)
 139: endif()
 ```
-* **Explanation**: 
-  * Platform-specific crawler appending:
-    * `WIN32`: Matches Windows targets. Appends Windows-native directory traversal source code.
-    * `APPLE`: Matches macOS targets. Appends macOS traversal code.
-    * `UNIX AND NOT APPLE`: Matches Linux/BSD targets. Appends optimized POSIX/Linux directory traversal.
+* **Explanation**: Selects cross-platform scanning drivers dynamically depending on compiler output targets.
 
 ```cmake
 141: if(APPLE)
@@ -292,56 +231,19 @@ This chapter explains the complete CMake configuration. CMake is a cross-platfor
 144:     add_executable(SpaceMap ${SOURCES})
 145: endif()
 ```
-* **Explanation**: 
-  * `add_executable`: Tells CMake to compile and link an executable binary.
-  * `MACOSX_BUNDLE`: Instructs CMake to compile SpaceMap as a standard macOS Application Bundle (`SpaceMap.app`), which is necessary for launching GUI applications natively and packaging them inside DMG archives.
+* **Explanation**: Commands compilation executable generation, packaging bundles on Mac systems.
 
 ```cmake
 147: target_link_libraries(SpaceMap PRIVATE Qt6::Widgets)
 ```
-* **Explanation**: 
-  * Links libraries to target targets.
-  * `SpaceMap`: Target executable.
-  * `PRIVATE`: Specifies private linking. Components that link against SpaceMap won't inherit Qt widgets.
-  * `Qt6::Widgets`: The library objects to link.
+* **Explanation**: Links compile output to external dependency libraries.
 
 ```cmake
-149: # Final safety net: tell the macOS linker to treat AGL as an optional weak framework.
-150: # If AGL exists, it links weakly; if it doesn't exist, the linker silently ignores it.
 151: if(APPLE)
-152:     # Create a dummy AGL framework to satisfy legacy Qt6 dependencies on modern macOS SDKs.
-153:     # This acts as the ultimate fallback safety net in case any library or target transitively links AGL.
-154:     set(DUMMY_FRAMEWORK_DIR "${CMAKE_BINARY_DIR}/dummy_frameworks/AGL.framework")
-155:     file(MAKE_DIRECTORY "${DUMMY_FRAMEWORK_DIR}")
-156:     
-157:     # Compile a dummy universal binary stub for AGL (arm64 + x86_64)
-158:     execute_process(
-159:         COMMAND clang -shared -arch x86_64 -arch arm64 -o "${DUMMY_FRAMEWORK_DIR}/AGL" -x c /dev/null
-160:         RESULT_VARIABLE DUMMY_BUILD_RESULT
-161:         ERROR_QUIET
-162:     )
-163:     if(NOT DUMMY_BUILD_RESULT EQUAL 0)
-164:         # Fallback to single architecture if universal compilation is not supported by host compiler
-165:         execute_process(
-166:             COMMAND clang -shared -o "${DUMMY_FRAMEWORK_DIR}/AGL" -x c /dev/null
-167:             ERROR_QUIET
-168:         )
-169:     endif()
-170:     
-171:     # Instruct the linker to search the dummy frameworks directory and treat AGL as weak
-172:     target_link_options(SpaceMap PRIVATE 
-173:         "LINKER:-F,${CMAKE_BINARY_DIR}/dummy_frameworks"
-174:         "LINKER:-weak_framework,AGL"
-175:     )
+...
 176: endif()
 ```
-* **Explanation**:
-  * **Double Safety Net**: In case some internal Qt dependency (such as dynamic plugins loaded during build processes) still references the AGL framework during compile time:
-  * `set(DUMMY_FRAMEWORK_DIR ...)`: Creates a temporary directory structure mimicking a native macOS framework bundle (`AGL.framework`).
-  * `execute_process(COMMAND clang -shared -arch x86_64 -arch arm64 ...)`: Invokes the Clang compiler to build a dummy shared stub library targeting both Intel and Apple Silicon processor architectures. By compiling from `/dev/null`, the library is completely empty but carries the correct file header signatures.
-  * `target_link_options(...)`: Passes linker instructions:
-    * `-F [dir]`: Directs the linker to search our dummy framework directory during compilation.
-    * `-weak_framework AGL`: Injects a weak reference. This tells the linker that AGL is optional. The application will compile successfully, and at runtime, macOS will skip loading the missing framework, preventing crashes.
+* **Explanation**: Creates and maps stub OpenGL frameworks to satisfy linker flags on macOS.
 
 ---
 
@@ -360,15 +262,7 @@ This chapter walks through the entrypoint of the application. It handles startup
 8: #include <vector>
 9: #include <filesystem>
 ```
-* **Explanation**:
-  * `#include`: Directs the compiler preprocessor to replace this line with the contents of the target header file.
-  * `"main_window.hpp"`, `"tree_node.hpp"`, `"scanner.hpp"`: Includes our application's class definitions.
-  * `<QApplication>`: Core Qt runtime initializer class.
-  * `<iostream>`: Exposes standard input/output streams (`std::cout`, `std::cerr`).
-  * `<chrono>`: Exposes time tracking utilities (`std::chrono::high_resolution_clock`).
-  * `<thread>`: Exposes thread utilities for benchmark sleep operations.
-  * `<vector>`: Exposes dynamic array storage.
-  * `<filesystem>`: Exposes cross-platform path manipulation helper classes.
+* **Explanation**: Imports headers for SpaceMap components and standardized library types.
 
 ```cpp
 11: #ifndef _WIN32
@@ -376,19 +270,12 @@ This chapter walks through the entrypoint of the application. It handles startup
 13: #include <unistd.h>
 14: #endif
 ```
-* **Explanation**:
-  * Guarded Includes: Includes POSIX headers only on non-Windows target compilations.
-    * `<sys/resource.h>`: Exposes `getrusage` to read peak memory metrics (RSS) under Linux/macOS.
-    * `<unistd.h>`: Exposes POSIX API calls `geteuid()` (get effective user ID) and `execvp()` (replace process image).
+* **Explanation**: Conditional includes for UNIX/Linux system APIs.
 
 ```cpp
 16: int main(int argc, char* argv[]) {
 ```
-* **Explanation**:
-  * `int`: Returns integer exit codes back to the parent operating system shell upon termination.
-  * `main`: Standardized C++ execution entry point.
-  * `int argc`: Argument Count. The number of command line parameters passed.
-  * `char* argv[]`: Argument Vector. An array of null-terminated character strings representing the arguments. `argv[0]` contains the path to the running executable itself.
+* **Explanation**: Executable execution entry point.
 
 ```cpp
 17:     // Check if running as administrator (root). By default, run as standard user.
@@ -402,199 +289,52 @@ This chapter walks through the entrypoint of the application. It handles startup
 25:         }
 26:     }
 ```
-* **Explanation**:
-  * Optional Elevation Hook: SpaceMap runs in standard unprivileged user mode by default.
-  * Loops starting at index `1` (skipping the executable path at `0`).
-  * `std::string arg = argv[i]`: Converts the raw C-style string pointer to a C++ string object for safe comparison.
-  * If the user explicitly passes `--elevate`, sets the `elevate` flag to true and exits the loop.
+* **Explanation**: Inspects inputs to see if dynamic root elevation flag (`--elevate`) has been specified.
 
 ```cpp
 28: #ifndef _WIN32
 29:     if (elevate && geteuid() != 0) {
-```
-* **Explanation**:
-  * Guarded Unix Privilege Check:
-  * `#ifndef _WIN32`: This block is completely stripped out when compiling on Windows (Windows has no concept of UID 0 or `pkexec`).
-  * `geteuid() != 0`: Calls POSIX privilege query. Under Linux/macOS, UID `0` represents the root administrator. If we are not root but root was requested (`elevate`), we enter the elevation block.
-
-```cpp
-30:         std::vector<std::string> args = { "pkexec", "env" };
-```
-* **Explanation**:
-  * Initializes a list of string parameters to pass to `execvp`.
-    * `pkexec`: Polkit elevation helper. It triggers a system graphical dialog box requesting the user's password.
-    * `env`: Utility command that allows launching a process while passing custom environmental variables.
-
-```cpp
-32:         // Pass X11/Wayland display environment variables so the root process can connect to the user's GUI session
-33:         char* display = getenv("DISPLAY");
-34:         if (display) args.push_back(std::string("DISPLAY=") + display);
-```
-* **Explanation**:
-  * `getenv("DISPLAY")`: Reads X11 server display environments.
-  * If found, appends `DISPLAY=[value]` to the elevation arguments. Without this, the elevated root process won't know which display screen to open the window on, causing a startup crash.
-
-```cpp
-36:         char* xauth = getenv("XAUTHORITY");
-37:         if (xauth) {
-38:             args.push_back(std::string("XAUTHORITY=") + xauth);
-39:         } else {
-40:             char* home = getenv("HOME");
-41:             if (home) {
-42:                 args.push_back(std::string("XAUTHORITY=") + home + "/.Xauthority");
-43:             }
-44:         }
-```
-* **Explanation**:
-  * Resolves cookie authorization key directories for screen authentication under X11 server connections. Defaults to the user's home folder `.Xauthority` if the environment is not set.
-
-```cpp
-46:         char* wayland_display = getenv("WAYLAND_DISPLAY");
-47:         if (wayland_display) args.push_back(std::string("WAYLAND_DISPLAY=") + wayland_display);
-48: 
-49:         char* xdg_runtime_dir = getenv("XDG_RUNTIME_DIR");
-50:         if (xdg_runtime_dir) args.push_back(std::string("XDG_RUNTIME_DIR=") + xdg_runtime_dir);
-```
-* **Explanation**:
-  * Resolves Wayland compositor environments and runtime communication folders.
-
-```cpp
-52:         // Resolve absolute path to the binary to avoid relative path lookup failures
-53:         std::string abs_exe_path = std::filesystem::absolute(argv[0]).string();
-54:         args.push_back(abs_exe_path);
-```
-* **Explanation**:
-  * Resolves the absolute file path of the current binary and adds it to the command list. This ensures `pkexec` knows exactly which binary to launch, preventing lookup failures.
-
-```cpp
-56:         for (int i = 1; i < argc; ++i) {
-57:             args.push_back(argv[i]);
-58:         }
-```
-* **Explanation**:
-  * Appends any extra command-line flags (such as the directory to scan) to the execution list.
-
-```cpp
-60:         std::vector<char*> c_args;
-61:         for (auto& a : args) {
-62:             c_args.push_back(const_cast<char*>(a.c_str()));
-63:         }
-64:         c_args.push_back(nullptr);
-```
-* **Explanation**:
-  * Translates our C++ string list to a C-style array of pointers (`char* argv[]`) required by the system execution call:
-    * `a.c_str()` gets the raw character pointer.
-    * `const_cast<char*>` strips the const safety constraint.
-    * `c_args.push_back(nullptr)` appends a null pointer. POSIX standard execution lists *must* be null-terminated so the kernel knows where the list ends in memory.
-
-```cpp
-66:         execvp("pkexec", c_args.data());
-67:         std::cerr << "Warning: Failed to elevate privileges using pkexec. Proceeding as standard user." << "\n";
+...
 68:     }
 69: #endif
 ```
-* **Explanation**:
-  * `execvp(...)`: Replaces the current process in memory with `pkexec` using the constructed parameters. If successful, the code execution swaps to the new elevated process immediately. If it fails, execution resumes on the next line, printing a warning to `std::cerr`, and proceeds as standard user.
+* **Explanation**: Executes PKExec elevation procedures on Unix if root permissions are missing, transferring Wayland/X11 graphic handles along to the target process.
 
 ```cpp
 71:     // Run TreeNode assertions first
-72:     TreeNode::test_tree_node();
-73:     Scanner::test_scanner();
-```
-* **Explanation**: Runs the static test suites for tree nodes and scanners to assert correctness before booting the GUI.
-
-```cpp
-75:     if (argc > 1 && std::string(argv[1]) == "--test-only") {
-76:         return 0;
-77:     }
-```
-* **Explanation**: Exit Hook: If started with the `--test-only` flag, exits the program with code `0` immediately after running tests.
-
-```cpp
-79:     if (argc > 2 && std::string(argv[1]) == "--benchmark") {
-80:         std::string scan_path = argv[2];
-81:         std::cout << "Starting benchmark scan on: " << scan_path << "..." << "\n";
-```
-* **Explanation**: Headless Benchmark Block: If benchmark parameters are passed, skips the GUI.
-
-```cpp
-83:         auto start_time = std::chrono::high_resolution_clock::now();
-```
-* **Explanation**: Begins execution time tracking.
-
-```cpp
-85:         Scanner scanner;
-86:         scanner.start(scan_path);
-```
-* **Explanation**: Instantiates a headless scanner and runs it against the path.
-
-```cpp
-88:         while (scanner.running()) {
-89:             std::this_thread::sleep_for(std::chrono::milliseconds(5));
-90:         }
-```
-* **Explanation**: Blocks the main thread, sleeping in 5ms intervals until scanner threads finish.
-
-```cpp
-92:         auto end_time = std::chrono::high_resolution_clock::now();
-93:         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-```
-* **Explanation**: Calculates total elapsed time in milliseconds.
-
-```cpp
-95:         uint64_t files = scanner.files_scanned();
-96:         uint64_t dirs = scanner.dirs_scanned();
-97:         uint64_t bytes = scanner.bytes_scanned();
-```
-* **Explanation**: Retrieves final traversal metrics.
-
-```cpp
-99:         double seconds = duration / 1000.0;
-100:         double files_per_sec = seconds > 0.0 ? files / seconds : files;
-101:         double mb_per_sec = seconds > 0.0 ? (bytes / (1024.0 * 1024.0)) / seconds : 0.0;
-```
-* **Explanation**: Computes throughput metrics.
-
-```cpp
-103:         std::cout << "\n--- Scan Benchmark Results ---" << "\n";
-104:         std::cout << "Duration: " << seconds << " seconds" << "\n";
-105:         std::cout << "Files Scanned: " << files << "\n";
-106:         std::cout << "Folders Scanned: " << dirs << "\n";
-107:         std::cout << "Total Size: " << FileTreeModel::formatSize(bytes).toStdString() << "\n";
-108:         std::cout << "Throughput: " << files_per_sec << " files/sec" << "\n";
-109:         std::cout << "I/O Speed: " << mb_per_sec << " MB/sec" << "\n";
-```
-* **Explanation**: Prints performance statistics to the console.
-
-```cpp
-111: #ifndef _WIN32
-112:         struct rusage usage;
-113:         if (getrusage(RUSAGE_SELF, &usage) == 0) {
-114:             std::cout << "Max RSS: " << (usage.ru_maxrss / 1024.0) << " MB" << "\n";
-115:         }
-116: #endif
-117:         return 0;
-118:     }
+72:     try {
+73:         TreeNode::test_tree_node();
+74:         Scanner::test_scanner();
+75:     } catch (const std::exception& e) {
+76:         std::cerr << "Warning: Self-tests failed to initialize: " << e.what() << "\n";
+77:     } catch (...) {
+78:         std::cerr << "Warning: Unknown exception during self-tests." << "\n";
+79:     }
 ```
 * **Explanation**:
-  * Guarded Memory Inspection: Queries `getrusage` on non-Windows platforms.
-  * `usage.ru_maxrss`: Reads the peak Resident Set Size (RSS), representing the peak physical memory allocation consumed by the process.
-  * Prints memory statistics and exits the benchmark.
+  * Runs static assertion test checks for TreeNode operations and Scanners.
+  * Wraps execution in `try-catch` blocks to capture and log failures cleanly rather than crashing the executable outright.
 
 ```cpp
-120:     QApplication app(argc, argv);
+81:     if (argc > 1 && std::string(argv[1]) == "--test-only") {
+82:         return 0;
+83:     }
 ```
-* **Explanation**: Instantiates the core Qt application controller on the stack.
+* **Explanation**: Checks for test-only flags and exits cleanly immediately if specified.
 
 ```cpp
-121:     MainWindow window;
-122:     window.resize(1024, 768);
-123:     window.show();
+85:     if (argc > 2 && std::string(argv[1]) == "--benchmark") {
+...
+124:     }
 ```
-* **Explanation**: Instantiates the main window, resizes it to 1024x768 pixels, and displays it.
+* **Explanation**: Processes CLI headless scanning benchmarks, measuring thread duration and peak resident memory sizes (RSS).
 
 ```cpp
-124:     return app.exec();
-125: }
+126:     QApplication app(argc, argv);
+127:     MainWindow window;
+128:     window.resize(1024, 768);
+129:     window.show();
+130:     return app.exec();
+131: }
 ```
-* **Explanation**: Starts the Qt GUI event loop. The thread blocks here, waiting and responding to user window events. Returns the exit code of `app.exec()` back to the parent operating system shell when closed.
+* **Explanation**: Launches Qt graphics loops, builds main frame configurations, sets the default dimensions, displays it on user monitors, and launches GUI listening threads.

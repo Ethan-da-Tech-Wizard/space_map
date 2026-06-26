@@ -185,13 +185,13 @@ The header file defines the layout of the `Scanner` class in memory, its signal/
 
 ```cpp
 75:     struct DirId {
-        dev_t dev;
-        ino_t ino;
-        bool operator<(const DirId& o) const {
-            if (dev != o.dev) return dev < o.dev;
-            return ino < o.ino;
-        }
-    };
+76:         dev_t dev;
+77:         ino_t ino;
+78:         bool operator<(const DirId& o) const {
+79:             if (dev != o.dev) return dev < o.dev;
+80:             return ino < o.ino;
+81:         }
+82:     };
 ```
 * **Explanation**:
   * `struct DirId`: Uniquely identifies a directory across the system.
@@ -200,71 +200,72 @@ The header file defines the layout of the `Scanner` class in memory, its signal/
   * `bool operator<(const DirId& o) const`: The less-than comparator operator overload. Since we store visited folders in a `std::set` (which maintains ordering in a red-black tree), we must define how to compare two `DirId` structs. It sorts first by device, and then by inode. By avoiding hash functions and potential Stop-The-World rehash allocations under the lock, `std::set` guarantees low lock-contention overhead.
 
 ```cpp
-95:     std::unique_ptr<TreeNode> m_root_node;
+85:     std::unique_ptr<TreeNode> m_root_node;
 ```
 * **Explanation**: The smart pointer that owns the memory of the root `TreeNode` of the scanned tree. When this unique pointer is reset or reassigned, it cleans up all subnodes automatically.
 
 ```cpp
-98:     struct Task {
-99:         std::string path;
-100:         TreeNode* parent_node;
-101:     };
+88:     struct Task {
+89:         std::string path;
+90:         TreeNode* parent_node;
+91:     };
 ```
 * **Explanation**: Defines a unit of scanning work.
   * `path`: Absolute filesystem path to scan (e.g. `/home/user/Downloads`).
   * `parent_node`: Raw pointer to the `TreeNode` inside the tree where discovered files/folders should be attached.
 
 ```cpp
-102:     std::vector<Task> m_task_queue;
+92:     std::vector<Task> m_task_queue;
 ```
 * **Explanation**: Dynamic array acting as the scan task queue. Worker threads pop tasks from the back (`m_task_queue.pop_back()`) to process them.
 
 ```cpp
-103:     std::mutex m_queue_mutex;
+93:     std::mutex m_queue_mutex;
 ```
 * **Explanation**: Mutual exclusion lock protecting the `m_task_queue` and active worker counts. Since multiple threads push and pop from the queue, this lock prevents corruption of the internal vector structure.
 
 ```cpp
-104:     std::condition_variable m_queue_cv;
+94:     std::condition_variable m_queue_cv;
 ```
 * **Explanation**: Condition variable used to coordinate threads. When the queue is empty, worker threads call `m_queue_cv.wait()` to sleep, putting the CPU to sleep instead of busy-waiting. When a new task is pushed, `m_queue_cv.notify_one()` wakes up one worker.
 
 ```cpp
-105:     std::condition_variable m_pause_cv;
+95:     std::condition_variable m_pause_cv;
 ```
 * **Explanation**: Condition variable used to pause worker threads. When the user clicks "Pause", workers block on this condition variable until the user clicks "Resume".
 
 ```cpp
-108:     std::vector<std::thread> m_workers;
+98:     std::vector<std::thread> m_workers;
 ```
 * **Explanation**: Array holding the handle to each thread spawned by the scanner. Used to join threads during cancellation or completion.
 
 ```cpp
-109:     std::atomic<bool> m_running{false};
-110:     std::atomic<bool> m_paused{false};
-111:     std::atomic<bool> m_cancelled{false};
+99:     std::atomic<bool> m_running{false};
+100:     std::atomic<bool> m_paused{false};
+101:     std::atomic<bool> m_cancelled{false};
 ```
 * **Explanation**: State control flags. They are wrapped in `std::atomic` to ensure that checks and modifications are thread-safe and visible across threads without standard mutex locking overhead.
 
 ```cpp
-112:     std::atomic<int> m_active_workers{0};
+102:     std::atomic<int> m_active_workers{0};
 ```
 * **Explanation**: Tracks the number of worker threads currently processing a directory. When this count drops to 0 and the task queue is empty, the entire scanning job is complete.
 
 ```cpp
-115:     std::set<DirId> m_visited_dirs;
-116:     std::mutex m_visited_mutex;
+105:     std::set<DirId> m_visited_dirs;
+106:     std::mutex m_visited_mutex;
 ```
 * **Explanation**:
   * `std::set<DirId> m_visited_dirs`: Set containing the IDs of all directories traversed during the scan. Used to detect and block recursive symlink cycles, bind mounts, and recursive directory loops. Under active multi-threaded locks, `std::set` is faster than `std::unordered_set` because it does not trigger random $O(N)$ rehash spikes which block concurrent worker threads.
   * `std::mutex m_visited_mutex`: Exclusive lock protecting the visited directory set.
 
 ```cpp
-119:     std::atomic<uint64_t> m_files_scanned{0};
-120:     std::atomic<uint64_t> m_dirs_scanned{0};
-121:     std::atomic<uint64_t> m_bytes_scanned{0};
-122:     std::atomic<uint64_t> m_total_target_bytes{0};
-123:     std::atomic<uint64_t> m_free_bytes{0};
+109:     std::atomic<uint64_t> m_files_scanned{0};
+110:     std::atomic<uint64_t> m_dirs_scanned{0};
+111:     std::atomic<uint64_t> m_bytes_scanned{0};
+112:     std::atomic<uint64_t> m_total_target_bytes{0};
+113:     std::atomic<uint64_t> m_free_bytes{0};
+114: };
 ```
 * **Explanation**: Atomic counters tracking total progress. `m_total_target_bytes` holds the partition size used bytes, which serves as the reference point for progress calculations.
 
@@ -414,8 +415,7 @@ The source file implements the coordinator, queue management, thread synchroniza
 96:     if (num_threads == 0) num_threads = 4;
 ```
 * **Explanation**:
-  * **Parallelism Strategy**: Since modern drives are high-speed SSDs, they handle concurrent random read requests efficiently. Artificially limiting the thread count to physical cores (as is sometimes done for HDDs to prevent mechanical head thrashing) is counterproductive. Using all logical hyperthreaded processors maximizes throughput.
-  * `std::thread::hardware_concurrency()`: Queries the system for the total number of hardware cores or logical processors. If it returns 0, we fallback to spawning 4 threads.
+  * **Parallelism Strategy**: Queries hardware logical cores via `std::thread::hardware_concurrency` to allocate threads, falling back to 4 threads if query yields 0.
 
 ```cpp
 98:     m_active_workers = num_threads;
@@ -424,10 +424,7 @@ The source file implements the coordinator, queue management, thread synchroniza
 101:         m_workers.emplace_back(&Scanner::worker_loop, this);
 102:     }
 ```
-* **Explanation**:
-  * Sets the active worker atomic counter to the thread count.
-  * `m_workers.reserve(...)`: Prevents reallocation of the thread list vector.
-  * `emplace_back(...)`: Spawns logical workers in-place inside the vector, mapping the `Scanner::worker_loop` execution to each thread.
+* **Explanation**: Registers worker counts, allocates worker thread listings, and runs their execution loops.
 
 ```cpp
 105: void Scanner::pause() {
@@ -505,17 +502,13 @@ The source file implements the coordinator, queue management, thread synchroniza
 147:     m_queue_cv.notify_one();
 148: }
 ```
-* **Explanation**:
-  * `std::lock_guard`: Locks the queue mutex.
-  * `m_task_queue.push_back`: Adds the task unit.
-  * `m_queue_cv.notify_one()`: Signals a single sleeping worker thread that a new task is available in the queue.
+* **Explanation**: Locks the queue mutex, adds the task, and notifies a waiting thread.
 
 ```cpp
 150: bool Scanner::get_next_task(std::string& path, TreeNode*& parent_node) {
 151:     std::unique_lock<std::mutex> lock(m_queue_mutex);
 ```
-* **Explanation**:
-  * `std::unique_lock`: Locks the queue mutex. Unlike `lock_guard`, a `unique_lock` can be unlocked and locked manually, which is required by condition variables.
+* **Explanation**: Locks the queue mutex using unique_lock.
 
 ```cpp
 154:     m_active_workers--;
@@ -544,7 +537,7 @@ The source file implements the coordinator, queue management, thread synchroniza
 ```
 * **Explanation**:
   * If the queue is empty, the thread calls `m_queue_cv.wait(lock)`. This atomically releases the lock and puts the thread to sleep.
-  * Waking up is controlled by `m_queue_cv` notifications. Waking inside a `while` loop prevents **spurious wakeups** (where a thread wakes up without an actual signal).
+  * Waking up is controlled by `m_queue_cv` notifications. Waking inside a `while` loop prevents spurious wakeups.
 
 ```cpp
 169:     m_active_workers++;
@@ -567,10 +560,7 @@ The source file implements the coordinator, queue management, thread synchroniza
 180:     return true;
 181: }
 ```
-* **Explanation**:
-  * Pops the task from the back of the vector.
-  * `std::move(task.path)`: Transfers the string buffer memory to the output parameter `path` without copying, saving memory allocation overhead.
-  * Returns `true` to signal a task is ready to be processed.
+* **Explanation**: Pops the task from the back of the vector, moving string pointers, and returns `true`.
 
 ```cpp
 183: void Scanner::worker_loop() {
@@ -580,11 +570,7 @@ The source file implements the coordinator, queue management, thread synchroniza
 187:     setpriority(PRIO_PROCESS, 0, 10);
 188: #endif
 ```
-* **Explanation**: 
-  * **Low-Priority Thread Scheduling**: Lower the thread's scheduling priority right at startup to prevent system stuttering:
-    * `SetThreadPriority(..., THREAD_PRIORITY_BELOW_NORMAL)` on Windows.
-    * `setpriority(PRIO_PROCESS, 0, 10)` on POSIX/Linux (increasing the thread "niceness" value).
-    * This ensures the operating system prioritizes user foreground tasks (like gaming or audio playback) over the disk scanning threads.
+* **Explanation**: Lowers thread priority to keep the system responsive.
 
 ```cpp
 190:     std::string current_path;
@@ -593,7 +579,7 @@ The source file implements the coordinator, queue management, thread synchroniza
 193:     auto last_update = std::chrono::steady_clock::now();
 194:     uint64_t files_since_update = 0;
 ```
-* **Explanation**: Initialize loop metrics. `last_update` tracks the time of the last progress signal to the GUI, preventing performance degradation from excessive signal emissions.
+* **Explanation**: Initializes loop metrics.
 
 ```cpp
 196:     while (m_running && !m_cancelled) {
@@ -610,8 +596,7 @@ The source file implements the coordinator, queue management, thread synchroniza
 ```cpp
 205:         if (m_cancelled) [[unlikely]] break;
 ```
-* **Explanation**:
-  * `[[unlikely]]`: C++20 attribute that hints to the compiler's branch predictor that cancellation is rare. This optimizes compiler branch structure for the common path (scanning).
+* **Explanation**: C++20 optimization attribute marking execution cancellation branch as unlikely.
 
 ```cpp
 207:         if (!get_next_task(current_path, parent_node)) {
@@ -655,7 +640,7 @@ The source file implements the coordinator, queue management, thread synchroniza
 229:             // Fail-safe to keep thread running
 230:         }
 ```
-* **Explanation**: Catch-all block. Ensures any unexpected filesystem access exceptions do not crash the worker thread, allowing the scan to continue.
+* **Explanation**: Catch-all block to prevent thread crashes.
 
 ```cpp
 233:         constexpr auto kUpdateInterval = std::chrono::milliseconds(100);
@@ -668,90 +653,24 @@ The source file implements the coordinator, queue management, thread synchroniza
 240:         }
 241:     }
 ```
-* **Explanation**:
-  * Throttled UI Updates: If more than 100ms has elapsed since the last update, or the thread has processed over 2000 files, it emits the `progressUpdated(...)` signal to update the UI progress bar.
+* **Explanation**: Throttles updates to the UI thread (every 100ms or 2000 files).
 
 ```cpp
 244:     emit progressUpdated(m_files_scanned.load(), m_dirs_scanned.load(), m_bytes_scanned.load());
 245: }
 ```
-* **Explanation**: Emits one final progress signal upon loop exit to ensure the GUI displays the final counts.
+* **Explanation**: Emits final progress counts.
 
 ```cpp
 250: double Scanner::progress_percentage() const {
-251:     if (!m_running) return 100.0;
-252:     uint64_t target = m_total_target_bytes.load();
-253:     if (target == 0) return 0.0;
-254:     double pct = (static_cast<double>(m_bytes_scanned.load()) / target) * 99.0;
-255:     if (pct > 99.0) pct = 99.0;
-256:     return pct;
-257: }
+...
+260: }
 ```
-* **Explanation**:
-  * Calculates scan progress as a percentage of the partition's total used bytes.
-  * The result is capped at 99.0% while running. This prevents the progress bar from reaching 100% before all threads have finished and joined.
+* **Explanation**: Calculates used-disk-space progress percentage, capped at 99.0% while running.
 
 ```cpp
 259: void Scanner::test_scanner() {
-260:     std::filesystem::path test_dir = std::filesystem::temp_directory_path() / "spacemap_test_scan_temp";
-261:     std::filesystem::create_directories(test_dir / "sub1" / "sub2");
+...
+303: }
 ```
-* **Explanation**: Verification test suite. It creates a mock directory hierarchy in the OS temporary directory, constructs nested subfolders using `std::filesystem::create_directories`.
-
-```cpp
-263:     // Write dummy files
-264:     {
-265:         std::ofstream f1(test_dir / "file1.txt");
-266:         f1 << "12345"; // 5 bytes
-267:     }
-268:     {
-269:         std::ofstream f2(test_dir / "sub1" / "file2.txt");
-270:         f2 << "1234567890"; // 10 bytes
-271:     }
-272:     {
-273:         std::ofstream f3(test_dir / "sub1" / "sub2" / "file3.txt");
-274:         f3 << "1"; // 1 byte
-275:     }
-```
-* **Explanation**: Writes 3 dummy files containing 5, 10, and 1 byte(s) respectively.
-
-```cpp
-277:     Scanner scanner;
-278:     scanner.start(test_dir.string());
-```
-* **Explanation**: Instantiates a test scanner and scans the temporary directory.
-
-```cpp
-281:     while (scanner.running()) {
-282:         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-283:     }
-```
-* **Explanation**: Blocks the test thread until the scanner threads finish processing the mock directory.
-
-```cpp
-286:     // Verify statistics
-287:     assert(scanner.files_scanned() == 3);
-288:     assert(scanner.dirs_scanned() == 2);
-289:     assert(scanner.bytes_scanned() == 16);
-```
-* **Explanation**: Asserts that the scanner counted 3 files, 2 directories, and 16 bytes.
-
-```cpp
-290:     TreeNode* root = scanner.root_node();
-291:     assert(root != nullptr);
-292:     assert(root->size == 16);
-293:     assert(root->file_count == 3);
-294:     assert(root->dir_count == 2);
-```
-* **Explanation**: Verifies the root node contains correct aggregated values.
-
-```cpp
-297:     std::filesystem::remove_all(test_dir);
-```
-* **Explanation**: Deletes the temporary test directory and its files.
-
-```cpp
-299:     std::cout << "Scanner tests passed successfully!" << "\n";
-300: }
-```
-* **Explanation**: Prints confirmation to stdout. Uses `"\n"` instead of `std::endl` to avoid forced flushes.
+* **Explanation**: Self-test suite constructing temporary directory nodes and asserting traversal totals.
