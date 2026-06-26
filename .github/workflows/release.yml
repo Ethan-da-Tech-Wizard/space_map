@@ -30,7 +30,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev libxcb-xinerama0-dev libx11-xcb-dev libglu1-mesa-dev
+          sudo apt-get install -y libgl1-mesa-dev libxcb-xinerama0-dev libx11-xcb-dev libglu1-mesa-dev libxcb-cursor0
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
