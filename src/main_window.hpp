@@ -8,6 +8,10 @@
 #include <QTimer>
 #include <QSplitter>
 #include <QProgressBar>
+#include <QComboBox>
+#include <QStorageInfo>
+#include <QJsonArray>
+#include <QJsonObject>
 #include "scanner.hpp"
 #include "file_tree_model.hpp"
 
@@ -27,6 +31,8 @@ private slots:
     void onDeleteToggleToggled(bool checked);
     void onDeleteActionTriggered();
     void onCustomContextMenuRequested(const QPoint& pos);
+    void onDriveSelected(int index);
+    void refreshDrivesList();
 
 private:
     void setupUi();
@@ -35,12 +41,16 @@ private:
     void updateStatsHUD(uint64_t files, uint64_t dirs, uint64_t bytes);
     QString getAbsoluteNodePath(TreeNode* node);
     void propagate_deletion_stats(TreeNode* start_node, uint64_t size_removed, uint64_t allocated_removed, uint64_t files_removed, uint64_t dirs_removed);
+    void parseBlockDevices(const QJsonArray& devices);
+    void processPartition(const QJsonObject& partObj);
 
     // Scanner & Data Model
     Scanner* m_scanner = nullptr;
     FileTreeModel* m_treeModel = nullptr;
 
     // UI Widgets
+    QComboBox* m_driveComboBox = nullptr;
+    QPushButton* m_refreshDrivesBtn = nullptr;
     QLineEdit* m_pathEdit = nullptr;
     QPushButton* m_browseBtn = nullptr;
     QPushButton* m_scanBtn = nullptr;
