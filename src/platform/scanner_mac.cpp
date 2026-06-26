@@ -73,6 +73,34 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             dir_files_size += fsize;
             dir_files_allocated += allocated_size;
             dir_files_count++;
+        } else if (entry->d_type == DT_UNKNOWN) {
+            struct stat st;
+            if (stat(full_path.c_str(), &st) == 0) {
+                if (S_ISDIR(st.st_mode)) {
+                    DirId id{st.st_dev, st.st_ino};
+                    {
+                        std::lock_guard<std::mutex> lock(m_visited_mutex);
+                        if (m_visited_dirs.count(id)) {
+                            continue;
+                        }
+                        m_visited_dirs.insert(id);
+                    }
+                    TreeNode* child = parent_node->get_or_create_child(name, true);
+                    add_task(full_path, child);
+                    dir_subdirs_count++;
+                } else if (S_ISREG(st.st_mode)) {
+                    TreeNode* child = parent_node->get_or_create_child(name, false);
+                    {
+                        std::unique_lock<std::shared_mutex> child_lock(child->mutex);
+                        child->size = st.st_size;
+                        child->allocated_size = st.st_blocks * 512;
+                        child->file_count = 1;
+                    }
+                    dir_files_size += st.st_size;
+                    dir_files_allocated += st.st_blocks * 512;
+                    dir_files_count++;
+                }
+            }
         }
     }
     closedir(dir);

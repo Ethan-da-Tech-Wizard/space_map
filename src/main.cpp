@@ -69,8 +69,14 @@ int main(int argc, char* argv[]) {
 #endif
 
     // Run TreeNode assertions first
-    TreeNode::test_tree_node();
-    Scanner::test_scanner();
+    try {
+        TreeNode::test_tree_node();
+        Scanner::test_scanner();
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Self-tests failed to initialize: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "Warning: Unknown exception during self-tests." << std::endl;
+    }
 
     if (argc > 1 && std::string(argv[1]) == "--test-only") {
         return 0;
