@@ -116,11 +116,10 @@ The Linux implementation uses low-level POSIX file descriptors, relative path lo
 * **Explanation**: Skips symbolic links to avoid cycle traversal.
 
 ```cpp
-86:         if (entry->d_type == DT_DIR) {
 87:             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
-88:                                                         : current_path + "/" + std::string(d_name, name_len);
+88:                                                         : current_path + "/" + d_name;
 ```
-* **Explanation**: If the entry is a directory, construct the full path string. We only allocate path memory when we definitely need to enqueue a new subdirectory scan task.
+* **Explanation**: If the entry is a directory, construct the full path string. We only allocate path memory when we definitely need to enqueue a new subdirectory scan task, avoiding temporary string creations on relative paths.
 
 ```cpp
 89:             // Ignore virtual/pseudo-filesystems
@@ -144,7 +143,7 @@ The Linux implementation uses low-level POSIX file descriptors, relative path lo
 104:                 }
 105:             }
 ```
-* **Explanation**: Performs a fast `fstatat` using the directory descriptor. It locks the cycle-tracking mutex and uses C++20 `m_visited_dirs.contains()` for an $O(1)$ lookup in the unordered set to see if the directory has already been visited.
+* **Explanation**: Performs a fast `fstatat` using the directory descriptor. It locks the cycle-tracking mutex and uses C++20 `m_visited_dirs.contains()` for an $O(\log n)$ lookup in the set to see if the directory has already been visited.
 
 ```cpp
 107:             TreeNode* child = parent_node->get_or_create_child(std::string_view(d_name, name_len), true);
@@ -382,9 +381,9 @@ macOS is UNIX-based. It uses POSIX streams similarly to Linux but does not suppo
 ```cpp
 52:         if (entry->d_type == DT_DIR) {
 53:             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
-54:                                                         : current_path + "/" + std::string(d_name, name_len);
+54:                                                         : current_path + "/" + d_name;
 ```
-* **Explanation**: Constructs folder paths. String allocations occur only for subdirectories that need task scheduling.
+* **Explanation**: Constructs folder paths. String allocations occur only for subdirectories that need task scheduling, avoiding temporary string creations on relative paths.
 
 ```cpp
 56:             // Skip macOS pseudo-filesystem mount points
@@ -406,7 +405,7 @@ macOS is UNIX-based. It uses POSIX streams similarly to Linux but does not suppo
 69:                 }
 70:             }
 ```
-* **Explanation**: Performs a fast relative `fstatat` system call. Checks device and inode numbers against `m_visited_dirs` using C++20 `contains()` in $O(1)$ time to prevent cyclic directory loops.
+* **Explanation**: Performs a fast relative `fstatat` system call. Checks device and inode numbers against `m_visited_dirs` using C++20 `contains()` in $O(\log n)$ time to prevent cyclic directory loops.
 
 ```cpp
 72:             TreeNode* child = parent_node->get_or_create_child(std::string_view(d_name, name_len), true);

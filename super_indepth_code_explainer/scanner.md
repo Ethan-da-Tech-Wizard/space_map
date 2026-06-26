@@ -27,7 +27,7 @@ The header file defines the layout of the `Scanner` class in memory, its signal/
 6: #include <mutex>
 7: #include <condition_variable>
 8: #include <atomic>
-9: #include <unordered_set>
+9: #include <set>
 10: #include <sys/types.h>
 11: #include <sys/stat.h>
 12: #ifndef _WIN32
@@ -43,7 +43,7 @@ The header file defines the layout of the `Scanner` class in memory, its signal/
   * `<mutex>`: Exposes mutual exclusion variables to prevent data races.
   * `<condition_variable>`: Exposes `std::condition_variable` to block/wake threads efficiently.
   * `<atomic>`: Exposes CPU-native lock-free mathematical variables.
-  * `<unordered_set>`: Exposes `std::unordered_set` (hash-table search structure) for tracking visited inodes in $O(1)$ time, replacing the older red-black tree `std::set` implementation to prevent pointer-chasing latency.
+  * `<set>`: Exposes `std::set` (red-black tree search structure) for tracking visited inodes to prevent traversal loops and symbolic link cycles.
   * `<sys/types.h>` and `<sys/stat.h>`: Exposes system types like `dev_t` (device IDs) and `ino_t` (inode IDs) to identify filesystem loops.
   * `#ifndef _WIN32`: Excludes `<sys/statvfs.h>` on Windows platforms since Windows does not implement POSIX disk statistics (which are instead resolved via the Win32 API).
   * `"tree_node.hpp"`: Includes our thread-safe `TreeNode` structure so the scanner can construct the file tree hierarchy.
@@ -185,30 +185,19 @@ The header file defines the layout of the `Scanner` class in memory, its signal/
 
 ```cpp
 75:     struct DirId {
-76:         dev_t dev;
-77:         ino_t ino;
-78:         bool operator==(const DirId& o) const {
-79:             return dev == o.dev && ino == o.ino;
-80:         }
-81:     };
+        dev_t dev;
+        ino_t ino;
+        bool operator<(const DirId& o) const {
+            if (dev != o.dev) return dev < o.dev;
+            return ino < o.ino;
+        }
+    };
 ```
 * **Explanation**:
   * `struct DirId`: Uniquely identifies a directory across the system.
     * `dev_t dev`: Device ID of the disk storage partition containing the folder.
     * `ino_t ino`: Inode ID (unique file/folder index number) within that partition.
-  * `bool operator==(const DirId& o) const`: Equality comparator needed by `std::unordered_set` to resolve hash collisions.
-
-```cpp
-85:     struct DirIdHash {
-86:         size_t operator()(const DirId& id) const noexcept {
-87:             size_t h1 = std::hash<dev_t>{}(id.dev);
-88:             size_t h2 = std::hash<ino_t>{}(id.ino);
-89:             return h1 ^ (h2 * 0x9e3779b97f4a7c15ULL + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
-90:         }
-91:     };
-```
-* **Explanation**:
-  * **Hash Functor**: Custom hashing functor that combines the 64-bit device ID (`dev`) and the 64-bit inode ID (`ino`) using a fast bit-mixing algorithm (inspired by `boost::hash_combine`). This distributes hash values uniformly, ensuring near-constant time $O(1)$ operations in the unordered set lookup.
+  * `bool operator<(const DirId& o) const`: The less-than comparator operator overload. Since we store visited folders in a `std::set` (which maintains ordering in a red-black tree), we must define how to compare two `DirId` structs. It sorts first by device, and then by inode. By avoiding hash functions and potential Stop-The-World rehash allocations under the lock, `std::set` guarantees low lock-contention overhead.
 
 ```cpp
 95:     std::unique_ptr<TreeNode> m_root_node;
@@ -263,11 +252,11 @@ The header file defines the layout of the `Scanner` class in memory, its signal/
 * **Explanation**: Tracks the number of worker threads currently processing a directory. When this count drops to 0 and the task queue is empty, the entire scanning job is complete.
 
 ```cpp
-115:     std::unordered_set<DirId, DirIdHash> m_visited_dirs;
+115:     std::set<DirId> m_visited_dirs;
 116:     std::mutex m_visited_mutex;
 ```
 * **Explanation**:
-  * `std::unordered_set<DirId, DirIdHash> m_visited_dirs`: Hash-based set containing the IDs of all directories traversed during the scan. Used to detect and block recursive symlink cycles, bind mounts, and recursive directory loops. Optimized to $O(1)$ complexity to avoid red-black tree search overhead.
+  * `std::set<DirId> m_visited_dirs`: Set containing the IDs of all directories traversed during the scan. Used to detect and block recursive symlink cycles, bind mounts, and recursive directory loops. Under active multi-threaded locks, `std::set` is faster than `std::unordered_set` because it does not trigger random $O(N)$ rehash spikes which block concurrent worker threads.
   * `std::mutex m_visited_mutex`: Exclusive lock protecting the visited directory set.
 
 ```cpp

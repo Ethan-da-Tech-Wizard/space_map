@@ -6,7 +6,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-#include <unordered_set>
+#include <set>
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifndef _WIN32
@@ -75,19 +75,9 @@ private:
     struct DirId {
         dev_t dev;
         ino_t ino;
-        bool operator==(const DirId& o) const {
-            return dev == o.dev && ino == o.ino;
-        }
-    };
-
-    // Hash functor for DirId — enables O(1) unordered_set lookups
-    // instead of O(log n) std::set red-black tree pointer chasing.
-    struct DirIdHash {
-        size_t operator()(const DirId& id) const noexcept {
-            // Combine dev and ino with a fast bit-mixing hash
-            size_t h1 = std::hash<dev_t>{}(id.dev);
-            size_t h2 = std::hash<ino_t>{}(id.ino);
-            return h1 ^ (h2 * 0x9e3779b97f4a7c15ULL + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+        bool operator<(const DirId& o) const {
+            if (dev != o.dev) return dev < o.dev;
+            return ino < o.ino;
         }
     };
 
@@ -112,7 +102,7 @@ private:
     std::atomic<int> m_active_workers{0};
 
     // Cycle detection
-    std::unordered_set<DirId, DirIdHash> m_visited_dirs;
+    std::set<DirId> m_visited_dirs;
     std::mutex m_visited_mutex;
 
     // Progress stats
