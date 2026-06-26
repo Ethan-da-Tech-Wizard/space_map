@@ -73,6 +73,10 @@ elseif(UNIX AND NOT APPLE)
     list(APPEND SOURCES src/platform/scanner_linux.cpp)
 endif()
 
-add_executable(SpaceMap ${SOURCES})
+if(APPLE)
+    add_executable(SpaceMap MACOSX_BUNDLE ${SOURCES})
+else()
+    add_executable(SpaceMap ${SOURCES})
+endif()
 
 target_link_libraries(SpaceMap PRIVATE Qt6::Widgets)
