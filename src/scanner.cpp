@@ -53,11 +53,21 @@ void Scanner::start(const std::string& root_path) {
     }
 
     // Measure the total used bytes of the filesystem partition to calculate accurate progress
+#ifdef _WIN32
+    // Convert path to wide string
+    std::wstring wpath(abs_path.begin(), abs_path.end());
+    ULARGE_INTEGER freeBytesAvailable, totalBytes, totalFreeBytes;
+    if (GetDiskFreeSpaceExW(wpath.c_str(), &freeBytesAvailable, &totalBytes, &totalFreeBytes)) {
+        m_total_target_bytes = totalBytes.QuadPart - totalFreeBytes.QuadPart;
+        m_free_bytes = freeBytesAvailable.QuadPart;
+    }
+#else
     struct statvfs vfs;
     if (statvfs(abs_path.c_str(), &vfs) == 0) {
         m_total_target_bytes = (vfs.f_blocks - vfs.f_bfree) * vfs.f_frsize;
         m_free_bytes = vfs.f_bavail * vfs.f_frsize;
     }
+#endif
 
     struct stat st;
     if (stat(abs_path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {

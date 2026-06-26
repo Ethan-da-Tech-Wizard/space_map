@@ -28,7 +28,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgl1-mesa-dev libxcb-xinerama0-dev libx11-xcb-dev libglu1-mesa-dev python3-pip python3-setuptools
-          pip3 install pillow
+          pip3 install pillow --break-system-packages
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -37,7 +37,12 @@ jobs:
           cache: true
 
       - name: Configure CMake
-        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+          else
+            cmake -G "Unix Makefiles" -B build -S . -DCMAKE_BUILD_TYPE=Release
+          fi
 
       - name: Build Application
         run: cmake --build build --config Release
@@ -49,7 +54,7 @@ jobs:
           windeployqt --dir build/dist --compiler-runtime --no-translations build/Release/SpaceMap.exe
           cp build/Release/SpaceMap.exe build/dist/
           cd build/dist
-          zip -r ../../SpaceMap-Windows-x64.zip *
+          7z a ../../SpaceMap-Windows-x64.zip *
 
       - name: Package Standalone Application (macOS)
         if: matrix.os == 'macos-latest'
@@ -61,6 +66,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           export APPIMAGE_EXTRACT_AND_RUN=1
+          export QMAKE=$(which qmake)
           wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy*.AppImage

@@ -23,11 +23,13 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"
         -fstack-protector-strong    # Canary protection against stack buffer overflows
         -fPIE                       # Position-independent code for ASLR
     )
-    add_link_options(
-        -pie                        # Position-independent executable for ASLR
-        -Wl,-z,relro                # Relocation Read-Only (RELRO)
-        -Wl,-z,now                  # Immediate binding (Full RELRO)
-    )
+    if(NOT APPLE)
+        add_link_options(
+            -pie                        # Position-independent executable for ASLR
+            -Wl,-z,relro                # Relocation Read-Only (RELRO)
+            -Wl,-z,now                  # Immediate binding (Full RELRO)
+        )
+    endif()
 elseif(MSVC)
     add_compile_options(
         /GS                         # Buffer Security Check

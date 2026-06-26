@@ -9,7 +9,9 @@
 #include <set>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <sys/statvfs.h>
+#endif
 #include "tree_node.hpp"
 
 class Scanner : public QObject {
