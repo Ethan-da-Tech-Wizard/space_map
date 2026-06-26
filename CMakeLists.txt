@@ -57,6 +57,19 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
+# Patch Qt6 imported targets to strip deprecated AGL framework on macOS
+if(APPLE)
+    foreach(qt_target Qt6::Gui Qt6::GuiPrivate Qt6::Widgets Qt6::WidgetsPrivate)
+        if(TARGET ${qt_target})
+            get_target_property(libs ${qt_target} INTERFACE_LINK_LIBRARIES)
+            if(libs)
+                string(REPLACE "-framework AGL" "" clean_libs "${libs}")
+                set_target_properties(${qt_target} PROPERTIES INTERFACE_LINK_LIBRARIES "${clean_libs}")
+            endif()
+        endif()
+    endforeach()
+endif()
+
 # Include source directories
 include_directories(src)
 
