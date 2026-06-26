@@ -367,7 +367,7 @@ This chapter walks through the entrypoint of the application. It handles startup
 
 ```cpp
 66:         execvp("pkexec", c_args.data());
-67:         std::cerr << "Warning: Failed to elevate privileges using pkexec. Proceeding as standard user." << std::endl;
+67:         std::cerr << "Warning: Failed to elevate privileges using pkexec. Proceeding as standard user." << "\n";
 68:     }
 69: #endif
 ```
@@ -391,7 +391,7 @@ This chapter walks through the entrypoint of the application. It handles startup
 ```cpp
 79:     if (argc > 2 && std::string(argv[1]) == "--benchmark") {
 80:         std::string scan_path = argv[2];
-81:         std::cout << "Starting benchmark scan on: " << scan_path << "..." << std::endl;
+81:         std::cout << "Starting benchmark scan on: " << scan_path << "..." << "\n";
 ```
 * **Explanation**: Headless Benchmark Block: If benchmark parameters are passed, skips the GUI.
 
@@ -434,13 +434,13 @@ This chapter walks through the entrypoint of the application. It handles startup
 * **Explanation**: Computes throughput metrics.
 
 ```cpp
-103:         std::cout << "\n--- Scan Benchmark Results ---" << std::endl;
-104:         std::cout << "Duration: " << seconds << " seconds" << std::endl;
-105:         std::cout << "Files Scanned: " << files << std::endl;
-106:         std::cout << "Folders Scanned: " << dirs << std::endl;
-107:         std::cout << "Total Size: " << FileTreeModel::formatSize(bytes).toStdString() << std::endl;
-108:         std::cout << "Throughput: " << files_per_sec << " files/sec" << std::endl;
-109:         std::cout << "I/O Speed: " << mb_per_sec << " MB/sec" << std::endl;
+103:         std::cout << "\n--- Scan Benchmark Results ---" << "\n";
+104:         std::cout << "Duration: " << seconds << " seconds" << "\n";
+105:         std::cout << "Files Scanned: " << files << "\n";
+106:         std::cout << "Folders Scanned: " << dirs << "\n";
+107:         std::cout << "Total Size: " << FileTreeModel::formatSize(bytes).toStdString() << "\n";
+108:         std::cout << "Throughput: " << files_per_sec << " files/sec" << "\n";
+109:         std::cout << "I/O Speed: " << mb_per_sec << " MB/sec" << "\n";
 ```
 * **Explanation**: Prints performance statistics to the console.
 
@@ -448,7 +448,7 @@ This chapter walks through the entrypoint of the application. It handles startup
 111: #ifndef _WIN32
 112:         struct rusage usage;
 113:         if (getrusage(RUSAGE_SELF, &usage) == 0) {
-114:             std::cout << "Max RSS: " << (usage.ru_maxrss / 1024.0) << " MB" << std::endl;
+114:             std::cout << "Max RSS: " << (usage.ru_maxrss / 1024.0) << " MB" << "\n";
 115:         }
 116: #endif
 117:         return 0;
