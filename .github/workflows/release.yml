@@ -30,7 +30,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev libxcb-xinerama0-dev libx11-xcb-dev libglu1-mesa-dev python3-pil
+          sudo apt-get install -y libgl1-mesa-dev libxcb-xinerama0-dev libx11-xcb-dev libglu1-mesa-dev
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -83,6 +83,9 @@ jobs:
           Icon=spacemap
           Categories=Utility;
           EOF
+          
+          # Install Pillow in the active Python environment
+          python3 -m pip install pillow
           
           # Generate placeholder icon using python pillow
           python3 -c "from PIL import Image; Image.new('RGB', (256, 256), (0, 210, 255)).save('spacemap.png')"
