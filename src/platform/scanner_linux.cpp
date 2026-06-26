@@ -85,7 +85,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
 
         if (entry->d_type == DT_DIR) {
             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
-                                                        : current_path + "/" + std::string(d_name, name_len);
+                                                        : current_path + "/" + d_name;
             // Ignore virtual/pseudo-filesystems
             if (full_path == "/proc" || full_path == "/sys" || full_path == "/dev" || full_path == "/run") {
                 continue;
@@ -149,7 +149,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
                 if (S_ISDIR(st.st_mode)) {
                     std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
-                                                                : current_path + "/" + std::string(d_name, name_len);
+                                                                : current_path + "/" + d_name;
                     if (full_path == "/proc" || full_path == "/sys" || full_path == "/dev" || full_path == "/run") {
                         continue;
                     }

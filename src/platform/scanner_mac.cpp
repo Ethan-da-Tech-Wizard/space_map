@@ -51,7 +51,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
 
         if (entry->d_type == DT_DIR) {
             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
-                                                        : current_path + "/" + std::string(d_name, name_len);
+                                                        : current_path + "/" + d_name;
 
             // Skip macOS pseudo-filesystem mount points
             if (full_path == "/System/Volumes" || full_path == "/private/var/vm") continue;
@@ -97,7 +97,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             // Fallback for filesystems that do not populate d_type (e.g. some network mounts)
             struct stat st;
             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
-                                                        : current_path + "/" + std::string(d_name, name_len);
+                                                        : current_path + "/" + d_name;
             if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
                 if (S_ISDIR(st.st_mode)) {
                     DirId id{st.st_dev, st.st_ino};
