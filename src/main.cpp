@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
         c_args.push_back(nullptr);
 
         execvp("pkexec", c_args.data());
-        std::cerr << "Warning: Failed to elevate privileges using pkexec. Proceeding as standard user." << std::endl;
+        std::cerr << "Warning: Failed to elevate privileges using pkexec. Proceeding as standard user." << "\n";
     }
 #endif
 
@@ -73,9 +73,9 @@ int main(int argc, char* argv[]) {
         TreeNode::test_tree_node();
         Scanner::test_scanner();
     } catch (const std::exception& e) {
-        std::cerr << "Warning: Self-tests failed to initialize: " << e.what() << std::endl;
+        std::cerr << "Warning: Self-tests failed to initialize: " << e.what() << "\n";
     } catch (...) {
-        std::cerr << "Warning: Unknown exception during self-tests." << std::endl;
+        std::cerr << "Warning: Unknown exception during self-tests." << "\n";
     }
 
     if (argc > 1 && std::string(argv[1]) == "--test-only") {
@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
 
     if (argc > 2 && std::string(argv[1]) == "--benchmark") {
         std::string scan_path = argv[2];
-        std::cout << "Starting benchmark scan on: " << scan_path << "..." << std::endl;
+        std::cout << "Starting benchmark scan on: " << scan_path << "..." << "\n";
 
         auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -106,18 +106,18 @@ int main(int argc, char* argv[]) {
         double files_per_sec = seconds > 0.0 ? files / seconds : files;
         double mb_per_sec = seconds > 0.0 ? (bytes / (1024.0 * 1024.0)) / seconds : 0.0;
 
-        std::cout << "\n--- Scan Benchmark Results ---" << std::endl;
-        std::cout << "Duration: " << seconds << " seconds" << std::endl;
-        std::cout << "Files Scanned: " << files << std::endl;
-        std::cout << "Folders Scanned: " << dirs << std::endl;
-        std::cout << "Total Size: " << FileTreeModel::formatSize(bytes).toStdString() << std::endl;
-        std::cout << "Throughput: " << files_per_sec << " files/sec" << std::endl;
-        std::cout << "I/O Speed: " << mb_per_sec << " MB/sec" << std::endl;
+        std::cout << "\n--- Scan Benchmark Results ---" << "\n";
+        std::cout << "Duration: " << seconds << " seconds" << "\n";
+        std::cout << "Files Scanned: " << files << "\n";
+        std::cout << "Folders Scanned: " << dirs << "\n";
+        std::cout << "Total Size: " << FileTreeModel::formatSize(bytes).toStdString() << "\n";
+        std::cout << "Throughput: " << files_per_sec << " files/sec" << "\n";
+        std::cout << "I/O Speed: " << mb_per_sec << " MB/sec" << "\n";
 
 #ifndef _WIN32
         struct rusage usage;
         if (getrusage(RUSAGE_SELF, &usage) == 0) {
-            std::cout << "Max RSS: " << (usage.ru_maxrss / 1024.0) << " MB" << std::endl;
+            std::cout << "Max RSS: " << (usage.ru_maxrss / 1024.0) << " MB" << "\n";
         }
 #endif
         return 0;

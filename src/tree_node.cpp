@@ -140,5 +140,5 @@ void TreeNode::test_tree_node() {
     assert(user->size == 600 + 1000 * 10);
     assert(user->allocated_size == 600 + 1000 * 10);
 
-    std::cout << "TreeNode tests passed successfully!" << std::endl;
+    std::cout << "TreeNode tests passed successfully!" << "\n";
 }
