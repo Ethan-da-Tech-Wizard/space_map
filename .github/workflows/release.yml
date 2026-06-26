@@ -125,7 +125,7 @@ jobs:
             SpaceMap-Windows-x64.zip
             SpaceMap-macOS.dmg
             SpaceMap-Linux.AppImage
-          draft: true
+          draft: false
           name: SpaceMap Release ${{ github.ref_name }}
           body: |
             # SpaceMap Standalone Releases
