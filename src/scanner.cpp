@@ -87,10 +87,28 @@ void Scanner::start(const std::string& root_path) {
         return;
     }
 
+    // Pre-allocate task queue to avoid repeated heap reallocations during scan burst
+    m_task_queue.reserve(4096);
+
+    // Determine optimal thread count based on platform and core count.
+    // Scanning is I/O-bound, so more threads than physical cores causes
+    // context-switching overhead and HDD head thrashing on spinning disks.
     unsigned int num_threads = std::thread::hardware_concurrency();
-    if (num_threads == 0) num_threads = 4;
+    if (num_threads == 0) num_threads = 2;
+#ifdef __APPLE__
+    // macOS hardware_concurrency() returns logical cores (hyperthreaded).
+    // On dual-core machines (e.g. 2017 MBP), this returns 4 but only 2
+    // physical cores exist. For I/O-bound scanning on APFS/HDD, cap to
+    // physical cores to avoid context-switch overhead and disk thrashing.
+    // Dividing by 2 gives physical cores on Intel Macs; on Apple Silicon
+    // (which has >=4 performance cores), the result is still generous.
+    unsigned int physical_cores = num_threads / 2;
+    if (physical_cores < 2) physical_cores = 2;
+    num_threads = physical_cores;
+#endif
 
     m_active_workers = num_threads;
+    m_workers.reserve(num_threads);
     for (unsigned int i = 0; i < num_threads; ++i) {
         m_workers.emplace_back(&Scanner::worker_loop, this);
     }
@@ -126,14 +144,15 @@ void Scanner::cancel() {
 }
 
 void Scanner::add_task(const std::string& path, TreeNode* parent_node) {
-    // Security check: limit directory traversal depth to 100 to prevent stack/OOM loop exploits
+    // Security check: limit directory traversal depth to prevent stack/OOM loop exploits
+    constexpr size_t kMaxDepth = 100;
     size_t depth = 0;
     for (char c : path) {
         if (c == '/' || c == '\\') {
             depth++;
         }
     }
-    if (depth > 100) return;
+    if (depth > kMaxDepth) return;
 
     std::lock_guard<std::mutex> lock(m_queue_mutex);
     m_task_queue.push_back({path, parent_node});
@@ -223,8 +242,10 @@ void Scanner::worker_loop() {
         }
 
         // Periodically emit progress updates to the main thread
+        constexpr auto kUpdateInterval = std::chrono::milliseconds(100);
+        constexpr uint64_t kUpdateBatchThreshold = 2000;
         auto now = std::chrono::steady_clock::now();
-        if (now - last_update > std::chrono::milliseconds(100) || files_since_update > 2000) {
+        if (now - last_update > kUpdateInterval || files_since_update > kUpdateBatchThreshold) {
             emit progressUpdated(m_files_scanned.load(), m_dirs_scanned.load(), m_bytes_scanned.load());
             files_since_update = 0;
             last_update = now;
