@@ -91,7 +91,8 @@ jobs:
           python3 -c "from PIL import Image; Image.new('RGB', (256, 256), (0, 210, 255)).save('spacemap.png')"
           
           # Run linuxdeploy
-          ./linuxdeploy-x86_64.AppImage --executable build/SpaceMap --desktop-file spacemap.desktop --icon-file spacemap.png --plugin qt --output appimage
+          mkdir -p AppDir
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable build/SpaceMap -d spacemap.desktop -i spacemap.png --plugin qt --output appimage
           mv SpaceMap-*.AppImage SpaceMap-Linux.AppImage
 
       - name: Upload Artifact
