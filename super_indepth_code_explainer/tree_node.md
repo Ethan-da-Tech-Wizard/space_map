@@ -387,7 +387,7 @@ The source file implements tree traversal, sorted child insertion via double-che
 140:     assert(user->size == 600 + 1000 * 10);
 141:     assert(user->allocated_size == 600 + 1000 * 10);
 142: 
-143:     std::cout << "TreeNode tests passed successfully!" << std::endl;
+143:     std::cout << "TreeNode tests passed successfully!" << "\n";
 144: }
 ```
 * **Explanation**: Asserts all 1000 files were created safely without data races or corruption, and prints success to console.
