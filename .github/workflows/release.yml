@@ -1,0 +1,126 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libxcb-xinerama0-dev libx11-xcb-dev libglu1-mesa-dev python3-pip python3-setuptools
+          pip3 install pillow
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.5.3'
+          cache: true
+
+      - name: Configure CMake
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Application
+        run: cmake --build build --config Release
+
+      - name: Package Standalone Application (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir -p build/dist
+          windeployqt --dir build/dist --compiler-runtime --no-translations build/Release/SpaceMap.exe
+          cp build/Release/SpaceMap.exe build/dist/
+          cd build/dist
+          zip -r ../../SpaceMap-Windows-x64.zip *
+
+      - name: Package Standalone Application (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          macdeployqt build/SpaceMap.app -dmg
+          mv build/SpaceMap.dmg SpaceMap-macOS.dmg
+
+      - name: Package Standalone Application (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy*.AppImage
+          
+          # Create simple desktop entry
+          cat <<EOF > spacemap.desktop
+          [Desktop Entry]
+          Type=Application
+          Name=SpaceMap
+          Exec=SpaceMap
+          Icon=spacemap
+          Categories=Utility;
+          EOF
+          
+          # Generate placeholder icon using python pillow
+          python3 -c "from PIL import Image; Image.new('RGB', (256, 256), (0, 210, 255)).save('spacemap.png')"
+          
+          # Run linuxdeploy
+          ./linuxdeploy-x86_64.AppImage --executable build/SpaceMap --desktop-file spacemap.desktop --icon-file spacemap.png --plugin qt --output appimage
+          mv SpaceMap-*.AppImage SpaceMap-Linux.AppImage
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: |
+            SpaceMap-Windows-x64.zip
+            SpaceMap-macOS.dmg
+            SpaceMap-Linux.AppImage
+          if-no-files-found: ignore
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: List files
+        run: ls -la
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            SpaceMap-Windows-x64.zip
+            SpaceMap-macOS.dmg
+            SpaceMap-Linux.AppImage
+          draft: true
+          name: SpaceMap Release ${{ github.ref_name }}
+          body: |
+            # SpaceMap Standalone Releases
+            
+            Download the pre-packaged standalone application for your platform:
+            
+            - 🪟 **Windows**: [SpaceMap-Windows-x64.zip](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/SpaceMap-Windows-x64.zip) (Unzip and run `SpaceMap.exe`)
+            - 🍏 **macOS**: [SpaceMap-macOS.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/SpaceMap-macOS.dmg) (Open DMG and drag `SpaceMap.app` to Applications)
+            - 🐧 **Linux**: [SpaceMap-Linux.AppImage](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/SpaceMap-Linux.AppImage) (Make executable: `chmod +x` and run)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

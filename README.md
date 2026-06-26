@@ -4,6 +4,16 @@ An ultra-low-latency, memory-optimized native desktop application that scans, an
 
 ---
 
+## 💾 Standalone Downloads (Zero Dependencies)
+
+If you do not want to build from source, you can download a pre-packaged standalone version for your operating system directly from the **[GitHub Releases](https://github.com/Ethan-da-Tech-Wizard/space_map/releases)** page:
+
+* **🪟 Windows**: Download `SpaceMap-Windows-x64.zip`. Extract the folder and double-click `SpaceMap.exe` to run.
+* **🍏 macOS**: Download `SpaceMap-macOS.dmg`. Open the DMG file and drag `SpaceMap.app` to your `Applications` folder, then launch it.
+* **🐧 Linux**: Download `SpaceMap-Linux.AppImage`. Make the file executable (right-click -> Properties -> Allow executing, or run `chmod +x SpaceMap-Linux.AppImage` in the terminal), then run.
+
+---
+
 ## 🚀 How to Build and Run (Cross-Platform)
 
 ### 🐧 Linux (Arch / Ubuntu / Fedora)
