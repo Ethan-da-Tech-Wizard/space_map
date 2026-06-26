@@ -248,25 +248,25 @@ double Scanner::progress_percentage() const {
 }
 
 void Scanner::test_scanner() {
-    std::string test_dir = "./test_scan_temp";
-    std::filesystem::create_directories(test_dir + "/sub1/sub2");
+    std::filesystem::path test_dir = std::filesystem::temp_directory_path() / "spacemap_test_scan_temp";
+    std::filesystem::create_directories(test_dir / "sub1" / "sub2");
 
     // Write dummy files
     {
-        std::ofstream f1(test_dir + "/file1.txt");
+        std::ofstream f1(test_dir / "file1.txt");
         f1 << "12345"; // 5 bytes
     }
     {
-        std::ofstream f2(test_dir + "/sub1/file2.txt");
+        std::ofstream f2(test_dir / "sub1" / "file2.txt");
         f2 << "1234567890"; // 10 bytes
     }
     {
-        std::ofstream f3(test_dir + "/sub1/sub2/file3.txt");
+        std::ofstream f3(test_dir / "sub1" / "sub2" / "file3.txt");
         f3 << "1"; // 1 byte
     }
 
     Scanner scanner;
-    scanner.start(test_dir);
+    scanner.start(test_dir.string());
 
     // Wait for the scan threads to complete
     while (scanner.running()) {
