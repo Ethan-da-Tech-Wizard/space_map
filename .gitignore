@@ -1,0 +1,20 @@
+# Qt and CMake build artifacts
+build/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+*.cmake
+SpaceMap
+SpaceMap_autogen/
+
+# Temporary and local IDE configurations
+.vscode/
+.idea/
+.DS_Store
+*~
+*.swp
+*.swo
+
+# Temporary directories
+.qt/
