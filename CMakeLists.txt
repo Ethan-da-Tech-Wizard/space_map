@@ -70,7 +70,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 # causes a fatal linker error. Qt 6.8 was built with AGL support on older SDKs
 # and bakes the reference into its imported target properties.
 if(APPLE)
-    # Define an explicit list of Qt6 targets to patch, as they may be global imported targets
+    # Define an explicit list of Qt6 and system targets to patch, as they may be global imported targets
     # and not listed in the directory-local IMPORTED_TARGETS property.
     set(_qt_targets
         Qt6::Gui
@@ -81,6 +81,8 @@ if(APPLE)
         Qt6::CorePrivate
         Qt6::Platform
         Qt6::QMacStylePlugin
+        WrapOpenGL::WrapOpenGL
+        OpenGL::GL
     )
     
     # Also discover any directory-scope imported targets
@@ -147,5 +149,28 @@ target_link_libraries(SpaceMap PRIVATE Qt6::Widgets)
 # Final safety net: tell the macOS linker to treat AGL as an optional weak framework.
 # If AGL exists, it links weakly; if it doesn't exist, the linker silently ignores it.
 if(APPLE)
-    target_link_options(SpaceMap PRIVATE "LINKER:-weak_framework,AGL")
+    # Create a dummy AGL framework to satisfy legacy Qt6 dependencies on modern macOS SDKs.
+    # This acts as the ultimate fallback safety net in case any library or target transitively links AGL.
+    set(DUMMY_FRAMEWORK_DIR "${CMAKE_BINARY_DIR}/dummy_frameworks/AGL.framework")
+    file(MAKE_DIRECTORY "${DUMMY_FRAMEWORK_DIR}")
+    
+    # Compile a dummy universal binary stub for AGL (arm64 + x86_64)
+    execute_process(
+        COMMAND clang -shared -arch x86_64 -arch arm64 -o "${DUMMY_FRAMEWORK_DIR}/AGL" -x c /dev/null
+        RESULT_VARIABLE DUMMY_BUILD_RESULT
+        ERROR_QUIET
+    )
+    if(NOT DUMMY_BUILD_RESULT EQUAL 0)
+        # Fallback to single architecture if universal compilation is not supported by host compiler
+        execute_process(
+            COMMAND clang -shared -o "${DUMMY_FRAMEWORK_DIR}/AGL" -x c /dev/null
+            ERROR_QUIET
+        )
+    endif()
+    
+    # Instruct the linker to search the dummy frameworks directory and treat AGL as weak
+    target_link_options(SpaceMap PRIVATE 
+        "LINKER:-F,${CMAKE_BINARY_DIR}/dummy_frameworks"
+        "LINKER:-weak_framework,AGL"
+    )
 endif()
