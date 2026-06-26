@@ -1,13 +1,18 @@
 cmake_minimum_required(VERSION 3.16)
+
+if(APPLE)
+    # Target macOS 11.0 (Big Sur) and later to ensure compatibility with Ventura 13 and older versions
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment version" FORCE)
+    # Build a universal binary supporting both Intel (x86_64) and Apple Silicon (arm64)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures for Mac OS X" FORCE)
+endif()
+
 project(SpaceMap LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(APPLE)
-    # Target macOS 11.0 (Big Sur) and later to ensure compatibility with Ventura 13 and older versions
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment version" FORCE)
-
     # Force removal of AGL framework if it was picked up by legacy dependencies in modern macOS SDKs
     string(REPLACE "-framework AGL" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
     string(REPLACE "-framework AGL" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
