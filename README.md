@@ -2,6 +2,7 @@
 
 <p align="center"><img src="docs/spacemap-scan.png" alt="SpaceMap scanning a directory and ranking folders by size" width="800"></p>
 
+
 An ultra-low-latency, memory-optimized native desktop application that scans, analyzes, and manages disk space usage in real-time. Built in native C++20 and Qt6 with multi-threading, hardware-accelerated layouts, and safe file deletion tools.
 
 ---
@@ -29,7 +30,7 @@ You can bypass this easily using one of these two methods:
 4. Click **Open** in the warning dialog. The app will now launch, and macOS will remember this preference so you can double-click to open it normally in the future.
 
 #### Method 2: The Terminal Command Method
-If the first method doesn't work, open **Terminal** and run the following command to remove the quarantine flag.
+If the first method doesn't work, open **Terminal** and run the following command to remove the quarantine flag:
 ```bash
 xattr -cr /Applications/SpaceMap.app
 ```
@@ -91,7 +92,7 @@ cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-####3. Run
+#### 3. Run
 ```cmd
 build\Release\SpaceMap.exe
 ```
@@ -111,4 +112,4 @@ build\Release\SpaceMap.exe
 ---
 
 ## 📖 Deep Code Explainer
-For line-by-line descriptions explaining the C++ syntax, memory safety, and Qt6 configurations, navigate to the **[super_indepth_code_explainer/](super_indepth_code_explainer/)** directory.
+For line-by-line descriptions explaining the C++ syntax, memory safety, multithreading logic, and Qt6 configurations, navigate to the **[super_indepth_code_explainer/](super_indepth_code_explainer/)** directory.
