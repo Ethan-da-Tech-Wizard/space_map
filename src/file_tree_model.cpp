@@ -1,4 +1,5 @@
 #include "file_tree_model.hpp"
+#include "theme_manager.hpp"
 #include <QApplication>
 #include <QStyle>
 #include <QIcon>
@@ -275,13 +276,14 @@ void PercentDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(Qt::NoPen);
-    painter->setBrush(QColor(70, 130, 180, 120)); // Semi-transparent steel-blue
+    painter->setBrush(ThemeManager::instance().activeTheme().percentBarColor);
     painter->drawRect(barRect);
     painter->restore();
 
     QString text = index.data(Qt::DisplayRole).toString();
     painter->save();
-    QColor textColor = QColor(224, 224, 224);
+    QColor textColor = ThemeManager::instance().activeTheme().textPrimary;
+    textColor.setAlpha(224);
     if (option.state & QStyle::State_Selected) {
         textColor = option.palette.color(QPalette::HighlightedText);
     }

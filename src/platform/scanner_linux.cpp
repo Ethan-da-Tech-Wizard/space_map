@@ -86,14 +86,18 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
         if (entry->d_type == DT_DIR) {
             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
                                                         : current_path + "/" + d_name;
-            // Ignore virtual/pseudo-filesystems
-            if (full_path == "/proc" || full_path == "/sys" || full_path == "/dev" || full_path == "/run") {
+            // Ignore virtual/pseudo-filesystems and root mount points when scanning /
+            if (full_path == "/proc" || full_path == "/sys" || full_path == "/dev" || full_path == "/run" ||
+                full_path == "/mnt" || full_path == "/media" || full_path == "/sys/fs/cgroup") {
                 continue;
             }
 
-            // Check for mount/bind cycles using inode dev IDs via fast fstatat
+            // Check for mount/bind cycles and enforce single-filesystem boundary (st_dev matching)
             struct stat st;
             if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+                if (m_root_dev != 0 && st.st_dev != m_root_dev) {
+                    continue; // Skip directories located on a different filesystem/device
+                }
                 DirId id{st.st_dev, st.st_ino};
                 {
                     std::lock_guard<std::mutex> lock(m_visited_mutex);
@@ -150,8 +154,12 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
                 if (S_ISDIR(st.st_mode)) {
                     std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
                                                                 : current_path + "/" + d_name;
-                    if (full_path == "/proc" || full_path == "/sys" || full_path == "/dev" || full_path == "/run") {
+                    if (full_path == "/proc" || full_path == "/sys" || full_path == "/dev" || full_path == "/run" ||
+                        full_path == "/mnt" || full_path == "/media" || full_path == "/sys/fs/cgroup") {
                         continue;
+                    }
+                    if (m_root_dev != 0 && st.st_dev != m_root_dev) {
+                        continue; // Skip directories located on a different filesystem/device
                     }
                     DirId id{st.st_dev, st.st_ino};
                     {

@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=SpaceMap
+GenericName=Disk Usage Analyzer
+Comment=High-speed C++ disk space visualizer and storage manager
+Exec=/home/ethan/.local/bin/SpaceMap
+Icon=drive-harddisk
+Terminal=false
+Categories=System;Filesystem;Qt;
+Keywords=disk;space;analyzer;storage;du;ncdu;cleanup;
+StartupNotify=true
+StartupWMClass=SpaceMap
+Actions=RunAsRoot;
+
+[Desktop Action RunAsRoot]
+Name=Run as Administrator (Root)
+Exec=/home/ethan/.local/bin/SpaceMap --elevate
+Icon=drive-harddisk

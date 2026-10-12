@@ -128,6 +128,10 @@ set(SOURCES
     src/scanner.hpp
     src/file_tree_model.cpp
     src/file_tree_model.hpp
+    src/theme_manager.cpp
+    src/theme_manager.hpp
+    src/theme_dialog.cpp
+    src/theme_dialog.hpp
 )
 
 if(WIN32)
@@ -174,3 +178,9 @@ if(APPLE)
         "LINKER:-weak_framework,AGL"
     )
 endif()
+
+if(UNIX AND NOT APPLE)
+    install(TARGETS SpaceMap DESTINATION bin)
+    install(FILES io.github.spacemap.desktop DESTINATION share/applications)
+endif()
+

@@ -44,6 +44,8 @@ public:
     uint64_t bytes_scanned() const { return m_bytes_scanned; }
     double progress_percentage() const;
     uint64_t free_bytes() const { return m_free_bytes; }
+    uint64_t total_capacity_bytes() const { return m_total_capacity_bytes; }
+    dev_t root_dev() const { return m_root_dev; }
     
     TreeNode* root_node() { return m_root_node.get(); }
 
@@ -101,6 +103,9 @@ private:
     std::atomic<bool> m_cancelled{false};
     std::atomic<int> m_active_workers{0};
 
+    // Target filesystem device ID
+    dev_t m_root_dev{0};
+
     // Cycle detection
     std::set<DirId> m_visited_dirs;
     std::mutex m_visited_mutex;
@@ -110,5 +115,6 @@ private:
     std::atomic<uint64_t> m_dirs_scanned{0};
     std::atomic<uint64_t> m_bytes_scanned{0};
     std::atomic<uint64_t> m_total_target_bytes{0};
+    std::atomic<uint64_t> m_total_capacity_bytes{0};
     std::atomic<uint64_t> m_free_bytes{0};
 };

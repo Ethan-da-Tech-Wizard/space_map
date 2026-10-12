@@ -59,6 +59,9 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             // Use fstatat with relative name (fast: no kernel path traversal)
             struct stat st;
             if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+                if (m_root_dev != 0 && st.st_dev != m_root_dev) {
+                    continue; // Skip directories located on a different filesystem/device
+                }
                 DirId id{st.st_dev, st.st_ino};
                 {
                     std::lock_guard<std::mutex> lock(m_visited_mutex);

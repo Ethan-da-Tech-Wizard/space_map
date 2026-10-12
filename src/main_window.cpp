@@ -1,4 +1,5 @@
 #include "main_window.hpp"
+#include "theme_dialog.hpp"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QGridLayout>
@@ -25,7 +26,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     setMinimumSize(800, 600);
     setupUi();
+
+    // Load saved theme or apply default
+    ThemeManager::instance().loadSettings();
     applyDarkTheme();
+
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, &MainWindow::onThemeChanged);
+
     updateControls();
 }
 
@@ -82,11 +89,13 @@ void MainWindow::setupUi() {
     m_cancelBtn = new QPushButton(tr("Cancel"), this);
     m_deleteToggleBtn = new QPushButton(tr("Enable Delete"), this);
     m_deleteToggleBtn->setCheckable(true);
+    m_customizeBtn = new QPushButton(tr("Customize Layout"), this);
 
     buttonBar->addWidget(m_scanBtn);
     buttonBar->addWidget(m_pauseBtn);
     buttonBar->addWidget(m_cancelBtn);
-    buttonBar->addStretch(1); // Push the deletion toggle to the right
+    buttonBar->addStretch(1); // Push the right-side buttons to the right
+    buttonBar->addWidget(m_customizeBtn);
     buttonBar->addWidget(m_deleteToggleBtn);
 
     controlLayout->addLayout(buttonBar);
@@ -124,13 +133,15 @@ void MainWindow::setupUi() {
     m_statusLabel = new QLabel(tr("Status: Idle"), this);
     m_filesLabel = new QLabel(tr("Files: 0"), this);
     m_dirsLabel = new QLabel(tr("Folders: 0"), this);
-    m_bytesLabel = new QLabel(tr("Size: 0 B"), this);
-    m_freeLabel = new QLabel(tr("Free Estate: 0 B"), this);
+    m_capacityLabel = new QLabel(tr("Total Size: 0 B"), this);
+    m_usedLabel = new QLabel(tr("Used Space: 0 B (0.0%)"), this);
+    m_freeLabel = new QLabel(tr("Free Space: 0 B (100.0%)"), this);
 
     hudLayout->addWidget(m_statusLabel);
     hudLayout->addWidget(m_filesLabel);
     hudLayout->addWidget(m_dirsLabel);
-    hudLayout->addWidget(m_bytesLabel);
+    hudLayout->addWidget(m_capacityLabel);
+    hudLayout->addWidget(m_usedLabel);
     hudLayout->addWidget(m_freeLabel);
     hudLayout->addStretch(1);
 
@@ -144,6 +155,7 @@ void MainWindow::setupUi() {
     connect(m_pauseBtn, &QPushButton::clicked, this, &MainWindow::onPauseClicked);
     connect(m_cancelBtn, &QPushButton::clicked, this, &MainWindow::onCancelClicked);
     connect(m_deleteToggleBtn, &QPushButton::toggled, this, &MainWindow::onDeleteToggleToggled);
+    connect(m_customizeBtn, &QPushButton::clicked, this, &MainWindow::onCustomizeLayoutClicked);
 
     // Setup Custom Context Menu and Delete action shortcut on QTreeView
     m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -176,111 +188,9 @@ void MainWindow::setupUi() {
 }
 
 void MainWindow::applyDarkTheme() {
-    // Elegant dark mode theme styling
-    QString stylesheet = R"(
-        QMainWindow {
-            background-color: #121212;
-        }
-        QLabel {
-            color: #ffffff;
-            font-size: 13px;
-        }
-        QProgressBar {
-            background-color: #1a1a1a;
-            color: #ffffff;
-            border: 1px solid #2d2d2d;
-            border-radius: 4px;
-            text-align: center;
-            height: 18px;
-            font-size: 11px;
-            font-weight: bold;
-        }
-        QProgressBar::chunk {
-            background-color: #00d2ff;
-            border-radius: 3px;
-        }
-        QLineEdit {
-            background-color: #1e1e1e;
-            color: #ffffff;
-            border: 1px solid #333333;
-            padding: 6px;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-        QLineEdit:focus {
-            border: 1px solid #007acc;
-        }
-        QComboBox {
-            background-color: #1e1e1e;
-            color: #ffffff;
-            border: 1px solid #333333;
-            padding: 6px 20px 6px 10px;
-            border-radius: 4px;
-            font-size: 13px;
-            min-width: 180px;
-        }
-        QComboBox:focus {
-            border: 1px solid #007acc;
-        }
-        QComboBox::drop-down {
-            subcontrol-origin: padding;
-            subcontrol-position: top right;
-            width: 20px;
-            border-left-width: 1px;
-            border-left-color: #333333;
-            border-left-style: solid;
-            border-top-right-radius: 3px;
-            border-bottom-right-radius: 3px;
-        }
-        QComboBox QAbstractItemView {
-            background-color: #1e1e1e;
-            color: #ffffff;
-            border: 1px solid #333333;
-            selection-background-color: #007acc;
-            selection-color: #ffffff;
-        }
-        QPushButton {
-            background-color: #2d2d2d;
-            color: #e0e0e0;
-            border: 1px solid #3a3a3a;
-            padding: 6px 12px;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-        QPushButton:hover {
-            background-color: #3d3d3d;
-            border: 1px solid #505050;
-        }
-        QPushButton:pressed {
-            background-color: #005999;
-        }
-        QTreeView {
-            background-color: #1a1a1a;
-            color: #e0e0e0;
-            border: 1px solid #2d2d2d;
-            border-radius: 4px;
-            alternate-background-color: #222222;
-        }
-        QTreeView::item:hover {
-            background-color: #2a2a2a;
-        }
-        QTreeView::item:selected {
-            background-color: #007acc;
-            color: #ffffff;
-        }
-        QHeaderView::section {
-            background-color: #252526;
-            color: #d0d0d0;
-            border: 1px solid #1a1a1a;
-            padding: 4px;
-        }
-        #hudFrame {
-            background-color: #1c1c1c;
-            border: 1px solid #2d2d2d;
-            border-radius: 4px;
-        }
-    )";
-    setStyleSheet(stylesheet);
+    // Apply theme from ThemeManager
+    const Theme& t = ThemeManager::instance().activeTheme();
+    setStyleSheet(ThemeManager::instance().generateStylesheet(t));
 }
 
 void MainWindow::updateControls() {
@@ -308,10 +218,31 @@ void MainWindow::updateControls() {
 }
 
 void MainWindow::updateStatsHUD(uint64_t files, uint64_t dirs, uint64_t bytes) {
-    m_filesLabel->setText(QString("Files: %1").arg(files));
-    m_dirsLabel->setText(QString("Folders: %1").arg(dirs));
-    m_bytesLabel->setText(QString("Size: %1").arg(FileTreeModel::formatSize(bytes)));
-    m_freeLabel->setText(QString("Free Estate: %1").arg(FileTreeModel::formatSize(m_scanner->free_bytes())));
+    m_filesLabel->setText(QString("Files: %1").arg(QLocale::system().toString(static_cast<qlonglong>(files))));
+    m_dirsLabel->setText(QString("Folders: %1").arg(QLocale::system().toString(static_cast<qlonglong>(dirs))));
+
+    uint64_t total_capacity = m_scanner->total_capacity_bytes();
+    uint64_t free_space = m_scanner->free_bytes();
+    uint64_t used_space = total_capacity >= free_space ? (total_capacity - free_space) : bytes;
+
+    double pct_used = 0.0;
+    double pct_free = 0.0;
+
+    if (total_capacity > 0) {
+        double raw_used_pct = (static_cast<double>(used_space) / static_cast<double>(total_capacity)) * 100.0;
+        pct_used = std::round(raw_used_pct * 10.0) / 10.0;
+        if (pct_used > 100.0) pct_used = 100.0;
+        if (pct_used < 0.0) pct_used = 0.0;
+        pct_free = 100.0 - pct_used; // Mathematical complement guarantee: pct_used + pct_free == 100.0%
+    }
+
+    m_capacityLabel->setText(QString("Total Size: %1").arg(FileTreeModel::formatSize(total_capacity)));
+    m_usedLabel->setText(QString("Used Space: %1 (%2%)")
+        .arg(FileTreeModel::formatSize(used_space))
+        .arg(QString::number(pct_used, 'f', 1)));
+    m_freeLabel->setText(QString("Free Space: %1 (%2%)")
+        .arg(FileTreeModel::formatSize(free_space))
+        .arg(QString::number(pct_free, 'f', 1)));
 }
 
 void MainWindow::onBrowseClicked() {
@@ -410,7 +341,10 @@ void MainWindow::onDeleteToggleToggled(bool checked) {
         );
         if (reply == QMessageBox::Yes) {
             m_deleteAction->setEnabled(true);
-            m_deleteToggleBtn->setStyleSheet("background-color: #ff3333; color: white; border: 1px solid #ff6666; font-weight: bold;");
+            const Theme& t = ThemeManager::instance().activeTheme();
+            m_deleteToggleBtn->setStyleSheet(QString("background-color: %1; color: white; border: 1px solid %2; font-weight: bold;")
+                .arg(t.deleteEnabledBg.name())
+                .arg(t.deleteEnabledBorder.name()));
             m_deleteToggleBtn->setText(tr("Deletion Enabled"));
         } else {
             m_deleteToggleBtn->blockSignals(true);
@@ -430,20 +364,26 @@ void MainWindow::onCustomContextMenuRequested(const QPoint& pos) {
     if (!index.isValid()) return;
 
     QMenu menu(this);
-    menu.setStyleSheet(R"(
+    const Theme& t = ThemeManager::instance().activeTheme();
+    menu.setStyleSheet(QString(R"(
         QMenu {
-            background-color: #1e1e1e;
-            color: #ffffff;
-            border: 1px solid #333333;
+            background-color: %1;
+            color: %2;
+            border: 1px solid %3;
         }
         QMenu::item:selected {
-            background-color: #007acc;
-            color: #ffffff;
+            background-color: %4;
+            color: %5;
         }
         QMenu::item:disabled {
             color: #666666;
         }
-    )");
+    )")
+    .arg(t.menuBg.name())
+    .arg(t.menuText.name())
+    .arg(t.menuBorder.name())
+    .arg(t.menuSelectedBg.name())
+    .arg(t.menuText.name()));
 
     QAction* deleteAct = new QAction(tr("Delete to Trash"), &menu);
     deleteAct->setEnabled(m_deleteToggleBtn->isChecked());
@@ -634,10 +574,9 @@ void MainWindow::refreshDrivesList() {
                 }
             }
 
-            QString text = QString("%1 (%2) - %3 free of %4")
+            QString text = QString("%1 (%2) - %3")
                 .arg(name)
                 .arg(rootPath)
-                .arg(formatBytes(info.bytesAvailable()))
                 .arg(formatBytes(info.bytesTotal()));
 
             m_driveComboBox->addItem(text, rootPath);
@@ -705,10 +644,16 @@ void MainWindow::processPartition(const QJsonObject& partObj) {
         }
 
         QString displayName = label.isEmpty() ? name : label;
+        QStorageInfo storage(mountpoint);
+        QString totalSizeStr = size;
+        if (storage.isValid() && storage.isReady() && storage.bytesTotal() > 0) {
+            totalSizeStr = FileTreeModel::formatSize(storage.bytesTotal());
+        }
+
         QString text = QString("%1 (%2) - %3")
             .arg(displayName)
             .arg(mountpoint)
-            .arg(size);
+            .arg(totalSizeStr);
         m_driveComboBox->addItem(text, mountpoint);
     } else {
         // Unmounted drive! Show "Click to Mount" option
@@ -790,3 +735,11 @@ void MainWindow::onDriveSelected(int index) {
     }
 }
 
+void MainWindow::onCustomizeLayoutClicked() {
+    ThemeDialog dialog(this);
+    dialog.exec();
+}
+
+void MainWindow::onThemeChanged() {
+    applyDarkTheme();
+}

@@ -30,7 +30,9 @@ void Scanner::reset() {
     m_dirs_scanned = 0;
     m_bytes_scanned = 0;
     m_total_target_bytes = 0;
+    m_total_capacity_bytes = 0;
     m_free_bytes = 0;
+    m_root_dev = 0;
     {
         std::lock_guard<std::mutex> lock(m_visited_mutex);
         m_visited_dirs.clear();
@@ -64,18 +66,21 @@ void Scanner::start(const std::string& root_path) {
     ULARGE_INTEGER freeBytesAvailable, totalBytes, totalFreeBytes;
     if (GetDiskFreeSpaceExW(wpath.c_str(), &freeBytesAvailable, &totalBytes, &totalFreeBytes)) {
         m_total_target_bytes = totalBytes.QuadPart - totalFreeBytes.QuadPart;
+        m_total_capacity_bytes = totalBytes.QuadPart;
         m_free_bytes = freeBytesAvailable.QuadPart;
     }
 #else
     struct statvfs vfs;
     if (statvfs(abs_path.c_str(), &vfs) == 0) {
         m_total_target_bytes = (vfs.f_blocks - vfs.f_bfree) * vfs.f_frsize;
+        m_total_capacity_bytes = static_cast<uint64_t>(vfs.f_blocks) * vfs.f_frsize;
         m_free_bytes = vfs.f_bavail * vfs.f_frsize;
     }
 #endif
 
     struct stat st;
     if (stat(abs_path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+        m_root_dev = st.st_dev;
         {
             std::lock_guard<std::mutex> lock(m_visited_mutex);
             m_visited_dirs.insert({st.st_dev, st.st_ino});

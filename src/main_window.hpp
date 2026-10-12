@@ -14,6 +14,7 @@
 #include <QJsonObject>
 #include "scanner.hpp"
 #include "file_tree_model.hpp"
+#include "theme_manager.hpp"
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -33,6 +34,8 @@ private slots:
     void onCustomContextMenuRequested(const QPoint& pos);
     void onDriveSelected(int index);
     void refreshDrivesList();
+    void onCustomizeLayoutClicked();
+    void onThemeChanged();
 
 private:
     void setupUi();
@@ -57,6 +60,7 @@ private:
     QPushButton* m_pauseBtn = nullptr;
     QPushButton* m_cancelBtn = nullptr;
     QPushButton* m_deleteToggleBtn = nullptr;
+    QPushButton* m_customizeBtn = nullptr;
     QAction* m_deleteAction = nullptr;
 
 
@@ -64,7 +68,8 @@ private:
     QLabel* m_statusLabel = nullptr;
     QLabel* m_filesLabel = nullptr;
     QLabel* m_dirsLabel = nullptr;
-    QLabel* m_bytesLabel = nullptr;
+    QLabel* m_capacityLabel = nullptr;
+    QLabel* m_usedLabel = nullptr;
     QLabel* m_freeLabel = nullptr;
 
 
