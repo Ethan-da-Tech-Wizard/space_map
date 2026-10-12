@@ -1,115 +1,40 @@
-# SpaceMap - C++ High-Speed Disk Analyzer
+# SpaceMap
 
-<p align="center"><img src="docs/spacemap-scan.png" alt="SpaceMap scanning a directory and ranking folders by size" width="800"></p>
+A native disk-space explorer with parallel scanning, directory summaries, and treemap views.
 
+**Status:** Desktop utility  
+**Built with:** C++20, Qt 6, CMake
 
-An ultra-low-latency, memory-optimized native desktop application that scans, analyzes, and manages disk space usage in real-time. Built in native C++20 and Qt6 with multi-threading, hardware-accelerated layouts, and safe file deletion tools.
+[Project guide](docs/PROJECT_GUIDE.md) · [Every file explained](docs/FILE_GUIDE.md) · [Licenses and dependencies](docs/LICENSE_REVIEW.md)
 
----
+## Start here
 
-## 💾 Standalone Downloads (Zero Dependencies)
+- [CMakeLists.txt](CMakeLists.txt) — CMake build definition for .; declares targets, dependency discovery, and compiler/build settings.
+- [src](src) — Application source and platform integration
+- [PROJECT_NOTES.md](PROJECT_NOTES.md) — Preserved detailed setup, usage, architecture, and development notes from the earlier README.
 
-If you do not want to build from source, you can download a pre-packaged standalone version for your operating system directly from the **[GitHub Releases](https://github.com/Ethan-da-Tech-Wizard/space_map/releases)** page:
+The following commands are taken from this project’s source/configuration. Install its prerequisites first.
 
-* **🪟 Windows**: Download `SpaceMap-Windows-x64.zip`. Extract the folder and double-click `SpaceMap.exe` to run.
-* **🍏 macOS**: Download `SpaceMap-macOS.dmg`. Open the DMG file and drag `SpaceMap.app` to your `Applications` folder, then launch it. (See the Gatekeeper section below if you get a developer verification warning).
-* **🐧 Linux**: Download `SpaceMap-Linux.AppImage`. Make the file executable (right-click -> Properties -> Allow executing, or run `chmod +x SpaceMap-Linux.AppImage` in the terminal), then run.
-
----
-
-### 🍏 macOS Gatekeeper Security Warning Bypass
-
-Because the macOS binary is compiled on GitHub Actions without an expensive Apple Developer signing certificate, macOS will show a warning saying **"SpaceMap cannot be opened because the developer cannot be verified"**.
-
-You can bypass this easily using one of these two methods:
-
-#### Method 1: The Finder Right-Click Method (Recommended)
-1. Open your **Applications** folder in Finder.
-2. **Control-click** (or right-click) the `SpaceMap` app icon.
-3. Select **Open** from the context menu.
-4. Click **Open** in the warning dialog. The app will now launch, and macOS will remember this preference so you can double-click to open it normally in the future.
-
-#### Method 2: The Terminal Command Method
-If the first method doesn't work, open **Terminal** and run the following command to remove the quarantine flag:
-```bash
-xattr -cr /Applications/SpaceMap.app
+```sh
+cmake -S . -B build
+cmake --build build
 ```
 
----
+[Detailed setup, usage, and development notes](PROJECT_NOTES.md) preserve the previous project documentation.
 
-## 🚀 How to Build and Run (Cross-Platform)
+## Repository layout
 
-### 🐧 Linux (Arch / Ubuntu / Fedora)
-#### 1. Install Dependencies
-* **Ubuntu/Debian**: `sudo apt install build-essential cmake qt6-base-dev`
-* **Arch Linux**: `sudo pacman -S base-devel cmake qt6-base`
-* **Fedora**: `sudo dnf groupinstall "Development Tools" && sudo dnf install cmake qt6-qtbase-devel`
+| Path | Role |
+| --- | --- |
+| [.github/](.github/) | GitHub workflow and contributor configuration (1 tracked entries). |
+| [docs/](docs/) | Project documentation, decisions, and reference material (6 tracked entries). |
+| [src/](src/) | Application source and platform integration (16 tracked entries). |
+| [super_indepth_code_explainer/](super_indepth_code_explainer/) | Project-specific super indepth code explainer components (6 tracked entries). |
 
-#### 2. Compile
-```bash
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-```
+## Scope and current limits
 
-#### 3. Run
-```bash
-./build/SpaceMap
-```
-*(Note: Scans requiring access to restricted system folders will prompt for Polkit elevation using standard `pkexec` automatically.)*
+Install the Qt components listed by CMake before building. Review deletion actions before using them on valuable data. Existing release packaging requires its own dependency notices.
 
----
+## License
 
-### 🍏 macOS (Intel & Apple Silicon)
-#### 1. Install Dependencies
-Install [Homebrew](https://brew.sh/) if not already installed, then run:
-```bash
-brew install cmake qt
-```
-
-#### 2. Compile
-```bash
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(sysctl -n hw.ncpu)
-```
-
-#### 3. Run
-```bash
-./build/SpaceMap
-```
-
----
-
-### 🪟 Windows (NTFS / Win32)
-#### 1. Install Dependencies
-1. Install [Visual Studio Community](https://visualstudio.microsoft.com/) with **Desktop development with C++** selected.
-2. Install [CMake](https://cmake.org/download/).
-3. Install Qt6 widgets using the [Qt Online Installer](https://www.qt.io/download-open-source).
-
-#### 2. Compile (developer Command Prompt for VS)
-Open **Developer Command Prompt for VS**, navigate to the project directory and run:
-```cmd
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-```
-
-#### 3. Run
-```cmd
-build\Release\SpaceMap.exe
-```
-
----
-
-## 📂 Project Architecture
-
-* **[CMakeLists.txt](CMakeLists.txt)** - Compiles compiler optimization options and platform setups.
-* **[src/main.cpp](src/main.cpp)** - App initializer, Polkit elevation checker, and test verification launcher.
-* **[src/main_window.hpp](src/main_window.hpp) / [main_window.cpp](src/main_window.cpp)** - Layout styling, warning button configurations, custom context menus, and trash tool triggers.
-* **[src/file_tree_model.hpp](src/file_tree_model.hpp) / [file_tree_model.cpp](src/file_tree_model.cpp)** - Qt model interface mapping tree node listings and dynamic column sizing algorithms.
-* **[src/tree_node.hpp](src/tree_node.hpp) / [tree_node.cpp](src/tree_node.cpp)** - Thread-safe prefix path compressed node trees storing statistics rollups.
-* **[src/scanner.hpp](src/scanner.hpp) / [scanner.cpp](src/scanner.cpp)** - Parallel task-based directory walk coordinator and worker loops.
-* **[src/platform/](src/platform/)** - Platform-specific walkers for Linux (`statx` relative calls), macOS (`dirent`), and Windows (`FindFirstFileW` wide-char handles).
-
----
-
-## 📖 Deep Code Explainer
-For line-by-line descriptions explaining the C++ syntax, memory safety, multithreading logic, and Qt6 configurations, navigate to the **[super_indepth_code_explainer/](super_indepth_code_explainer/)** directory.
+Original project code retains **MIT** terms in [LICENSE](LICENSE). Third-party libraries, media, data, models, and tools retain their own terms. See the [license review](docs/LICENSE_REVIEW.md) and [dependency inventory](docs/DEPENDENCIES.csv).
