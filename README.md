@@ -1,5 +1,8 @@
 # SpaceMap - C++ High-Speed Disk Analyzer
 
+<p align="center"><img src="docs/spacemap-scan.png" alt="SpaceMap scanning a directory and ranking folders by size" width="800"></p>
+
+
 An ultra-low-latency, memory-optimized native desktop application that scans, analyzes, and manages disk space usage in real-time. Built in native C++20 and Qt6 with multi-threading, hardware-accelerated layouts, and safe file deletion tools.
 
 ---
@@ -98,15 +101,15 @@ build\Release\SpaceMap.exe
 
 ## 📂 Project Architecture
 
-* **[CMakeLists.txt](file:///home/ethan/space_map/CMakeLists.txt)** - Compiles compiler optimization options and platform setups.
-* **[src/main.cpp](file:///home/ethan/space_map/src/main.cpp)** - App initializer, Polkit elevation checker, and test verification launcher.
-* **[src/main_window.hpp](file:///home/ethan/space_map/src/main_window.hpp) / [main_window.cpp](file:///home/ethan/space_map/src/main_window.cpp)** - Layout styling, warning button configurations, custom context menus, and trash tool triggers.
-* **[src/file_tree_model.hpp](file:///home/ethan/space_map/src/file_tree_model.hpp) / [file_tree_model.cpp](file:///home/ethan/space_map/src/file_tree_model.cpp)** - Qt model interface mapping tree node listings and dynamic column sizing algorithms.
-* **[src/tree_node.hpp](file:///home/ethan/space_map/src/tree_node.hpp) / [tree_node.cpp](file:///home/ethan/space_map/src/tree_node.cpp)** - Thread-safe prefix path compressed node trees storing statistics rollups.
-* **[src/scanner.hpp](file:///home/ethan/space_map/src/scanner.hpp) / [scanner.cpp](file:///home/ethan/space_map/src/scanner.cpp)** - Parallel task-based directory walk coordinator and worker loops.
-* **[src/platform/](file:///home/ethan/space_map/src/platform/)** - Platform-specific walkers for Linux (`statx` relative calls), macOS (`dirent`), and Windows (`FindFirstFileW` wide-char handles).
+* **[CMakeLists.txt](CMakeLists.txt)** - Compiles compiler optimization options and platform setups.
+* **[src/main.cpp](src/main.cpp)** - App initializer, Polkit elevation checker, and test verification launcher.
+* **[src/main_window.hpp](src/main_window.hpp) / [main_window.cpp](src/main_window.cpp)** - Layout styling, warning button configurations, custom context menus, and trash tool triggers.
+* **[src/file_tree_model.hpp](src/file_tree_model.hpp) / [file_tree_model.cpp](src/file_tree_model.cpp)** - Qt model interface mapping tree node listings and dynamic column sizing algorithms.
+* **[src/tree_node.hpp](src/tree_node.hpp) / [tree_node.cpp](src/tree_node.cpp)** - Thread-safe prefix path compressed node trees storing statistics rollups.
+* **[src/scanner.hpp](src/scanner.hpp) / [scanner.cpp](src/scanner.cpp)** - Parallel task-based directory walk coordinator and worker loops.
+* **[src/platform/](src/platform/)** - Platform-specific walkers for Linux (`statx` relative calls), macOS (`dirent`), and Windows (`FindFirstFileW` wide-char handles).
 
 ---
 
 ## 📖 Deep Code Explainer
-For line-by-line descriptions explaining the C++ syntax, memory safety, multithreading logic, and Qt6 configurations, navigate to the **[super_indepth_code_explainer/](file:///home/ethan/space_map/super_indepth_code_explainer/)** directory.
+For line-by-line descriptions explaining the C++ syntax, memory safety, multithreading logic, and Qt6 configurations, navigate to the **[super_indepth_code_explainer/](super_indepth_code_explainer/)** directory.
