@@ -3,13 +3,13 @@
 <p align="center"><img src="docs/spacemap-scan.png" alt="SpaceMap scanning a directory and ranking folders by size" width="800"></p>
 
 
-An ultra-low-latency, memory-optimized native desktop application that scans, analyzes, and manages disk space usage in real-time. Built in native C++20 and Qt6 with multi-threading, hardware-accelerated layouts, and safe file deletion tools.
+A native C++20 and Qt6 desktop disk-space explorer. Performance, release packaging and file-deletion safety have not been independently verified in this review.
 
 ---
 
-## 💾 Standalone Downloads (Zero Dependencies)
+## 💾 Standalone Downloads (Historical Notes)
 
-If you do not want to build from source, you can download a pre-packaged standalone version for your operating system directly from the **[GitHub Releases](https://github.com/Ethan-da-Tech-Wizard/space_map/releases)** page:
+The project has historically documented pre-packaged downloads on the **[GitHub Releases](https://github.com/Ethan-da-Tech-Wizard/space_map/releases)** page. Release availability, packaging, and dependencies have not been independently verified:
 
 * **🪟 Windows**: Download `SpaceMap-Windows-x64.zip`. Extract the folder and double-click `SpaceMap.exe` to run.
 * **🍏 macOS**: Download `SpaceMap-macOS.dmg`. Open the DMG file and drag `SpaceMap.app` to your `Applications` folder, then launch it. (See the Gatekeeper section below if you get a developer verification warning).
