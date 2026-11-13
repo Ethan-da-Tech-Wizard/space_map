@@ -1,40 +1,30 @@
 # SpaceMap
 
-A native disk-space explorer with parallel scanning, directory summaries, and treemap views.
+SpaceMap is a C++ and Qt desktop project for exploring disk usage. It brings directory scanning, folder summaries, and a treemap view together in one interface.
 
-**Status:** Desktop utility  
-**Built with:** C++20, Qt 6, CMake
+**Status:** Desktop utility; current builds and releases have not been independently verified in this review.
 
-[Project guide](docs/PROJECT_GUIDE.md) · [Every file explained](docs/FILE_GUIDE.md) · [Licenses and dependencies](docs/LICENSE_REVIEW.md)
+## Explore the project
 
-## Start here
+- Scan a directory and inspect the resulting size hierarchy and visual treemap.
+- Source includes a parallel scanning coordinator and platform-specific filesystem code.
+- The project also documents file-management actions. Review an action carefully before changing or deleting files.
 
-- [CMakeLists.txt](CMakeLists.txt) — CMake build definition for .; declares targets, dependency discovery, and compiler/build settings.
-- [src](src) — Application source and platform integration
-- [PROJECT_NOTES.md](PROJECT_NOTES.md) — Preserved detailed setup, usage, architecture, and development notes from the earlier README.
+## Build from source
 
-The following commands are taken from this project’s source/configuration. Install its prerequisites first.
+You need a C++20 compiler, CMake, and Qt 6 Widgets. From the repository root:
 
 ```sh
 cmake -S . -B build
 cmake --build build
 ```
 
-[Detailed setup, usage, and development notes](PROJECT_NOTES.md) preserve the previous project documentation.
+Platform-specific prerequisites, launch instructions, and historical release information are in [PROJECT_NOTES.md](PROJECT_NOTES.md). These notes include older release and security-related instructions; verify their applicability to your system before following them. We have not independently tested installation or release packages in this review.
 
-## Repository layout
+## More information
 
-| Path | Role |
-| --- | --- |
-| [.github/](.github/) | GitHub workflow and contributor configuration (1 tracked entries). |
-| [docs/](docs/) | Project documentation, decisions, and reference material (6 tracked entries). |
-| [src/](src/) | Application source and platform integration (16 tracked entries). |
-| [super_indepth_code_explainer/](super_indepth_code_explainer/) | Project-specific super indepth code explainer components (6 tracked entries). |
-
-## Scope and current limits
-
-Install the Qt components listed by CMake before building. Review deletion actions before using them on valuable data. Existing release packaging requires its own dependency notices.
+[CMake build definition](CMakeLists.txt) · [Source](src/) · [Project guide](docs/PROJECT_GUIDE.md) · [License review](docs/LICENSE_REVIEW.md)
 
 ## License
 
-Original project code retains **MIT** terms in [LICENSE](LICENSE). Third-party libraries, media, data, models, and tools retain their own terms. See the [license review](docs/LICENSE_REVIEW.md) and [dependency inventory](docs/DEPENDENCIES.csv).
+Project code is distributed under the [MIT License](LICENSE). Dependencies and packaged assets may have their own terms; see the [license review](docs/LICENSE_REVIEW.md) and [dependency inventory](docs/DEPENDENCIES.csv).
