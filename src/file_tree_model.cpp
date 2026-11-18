@@ -1,7 +1,6 @@
 // ==============================================================================
 // Program: file_tree_model.cpp
 // Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
 // Last Modified: November 18, 2026
 // Purpose: Qt model interface mapping tree node listings and dynamic column sizing
 // ==============================================================================
