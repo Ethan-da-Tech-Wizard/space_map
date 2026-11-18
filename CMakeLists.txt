@@ -7,7 +7,7 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures for Mac OS X" FORCE)
 endif()
 
-project(SpaceMap LANGUAGES CXX)
+project(SpaceMap VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -144,6 +144,16 @@ endif()
 
 if(APPLE)
     add_executable(SpaceMap MACOSX_BUNDLE ${SOURCES})
+    # Keep bundle metadata and the Files & Folders purpose string stable.
+    # Permission continuity across updated builds also requires a stable
+    # Developer ID signing identity in the release pipeline.
+    set_target_properties(SpaceMap PROPERTIES
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.twullc.spacemap"
+        MACOSX_BUNDLE_BUNDLE_NAME "SpaceMap"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in"
+    )
 else()
     add_executable(SpaceMap ${SOURCES})
 endif()

@@ -3,7 +3,7 @@ Type=Application
 Name=SpaceMap
 GenericName=Disk Usage Analyzer
 Comment=High-speed C++ disk space visualizer and storage manager
-Exec=/home/ethan/.local/bin/SpaceMap
+Exec=SpaceMap
 Icon=drive-harddisk
 Terminal=false
 Categories=System;Filesystem;Qt;
@@ -14,5 +14,5 @@ Actions=RunAsRoot;
 
 [Desktop Action RunAsRoot]
 Name=Run as Administrator (Root)
-Exec=/home/ethan/.local/bin/SpaceMap --elevate
+Exec=SpaceMap --elevate
 Icon=drive-harddisk

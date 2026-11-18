@@ -576,7 +576,7 @@ The source file handles layout construction, stylesheets, block-device discovery
 
 ```cpp
 758:         if (success) {
-759:             // Find the mount point from the output, e.g. "Mounted /dev/sda1 at /run/media/ethan/54BE3B12BE3AEC5C"
+759:             // Find the mount point from the output, e.g. "Mounted /dev/sda1 at /run/media/user/54BE3B12BE3AEC5C"
 760:             int atIndex = output.indexOf(" at ");
 761:             if (atIndex != -1) {
 762:                 QString mountPath = output.mid(atIndex + 4).trimmed();
