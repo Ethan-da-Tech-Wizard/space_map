@@ -1,8 +1,15 @@
+// ==============================================================================
+// Program: space_map - scanner_win.cpp
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Windows implementation of Scanner::scan_directory using FindFirstFileW and GetCompressedFileSizeW.
+// ==============================================================================
 #include "scanner.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #include <string>
 
+// Windows APIs use UTF-16 wide strings; the scanner and tree use UTF-8
 // Helper to convert UTF-8 string to UTF-16 wstring
 static std::wstring utf8_to_utf16(const std::string& utf8) {
     if (utf8.empty()) return L"";
@@ -23,9 +30,12 @@ static std::string utf16_to_utf8(const std::wstring& utf16) {
     return utf8;
 }
 
+/// Reads one directory with the Win32 find API: records each file's size and on-disk size,
+/// queues subdirectories (skipping reparse points), and returns this directory's totals.
 void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_node,
                              uint64_t& dir_files_size, uint64_t& dir_files_allocated,
                              uint64_t& dir_files_count, uint64_t& dir_subdirs_count) {
+    // Build the wildcard pattern that lists everything in the directory
     std::string search_path = current_path;
     if (search_path.back() != '\\' && search_path.back() != '/') {
         search_path += "\\*";
@@ -39,6 +49,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
 
     if (find_handle == INVALID_HANDLE_VALUE) return;
 
+    // Iterate every entry in the directory
     do {
         if (m_cancelled) [[unlikely]] break;
 
@@ -75,9 +86,11 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             add_task(full_path, child);
             dir_subdirs_count++;
         } else {
+            // File size arrives as two 32-bit halves
             uint64_t fsize = (static_cast<uint64_t>(find_data.nFileSizeHigh) << 32) | find_data.nFileSizeLow;
             uint64_t allocated_size = fsize;
 
+            // (reports the compressed size when NTFS compression applies)
             // Get compressed/allocated size on disk
             std::wstring wfull_path = utf8_to_utf16(full_path);
             DWORD high_size = 0;

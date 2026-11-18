@@ -1,8 +1,8 @@
 // ==============================================================================
-// Program: file_tree_model.cpp
-// Programmer: Ethan-da-Tech-Wizard
-// Last Modified: November 18, 2026
-// Purpose: Qt model interface mapping tree node listings and dynamic column sizing
+// Program: space_map - file_tree_model.cpp
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Implements FileTreeModel (index, parent, rows, cell data, sorting, node removal) and the PercentDelegate bar painter.
 // ==============================================================================
 #include "file_tree_model.hpp"
 #include "theme_manager.hpp"
@@ -13,15 +13,18 @@
 #include <mutex>
 #include <algorithm>
 
+/// Stores the (possibly null) root node; the model does not own it.
 FileTreeModel::FileTreeModel(TreeNode* root, QObject* parent)
     : QAbstractItemModel(parent), m_root(root) {}
 
+/// Replaces the root node, wrapped in begin/endResetModel so views refresh.
 void FileTreeModel::setRootNode(TreeNode* root) {
     beginResetModel();
     m_root = root;
     endResetModel();
 }
 
+/// Creates an index for child 'row' of the parent; the TreeNode pointer is stored as the index's internal pointer.
 QModelIndex FileTreeModel::index(int row, int column, const QModelIndex& parent) const {
     if (!m_root) return QModelIndex();
 
@@ -34,6 +37,7 @@ QModelIndex FileTreeModel::index(int row, int column, const QModelIndex& parent)
 
     if (!parentNode) return QModelIndex();
 
+    // Read lock: the scanner may still be inserting children on other threads
     std::shared_lock<std::shared_mutex> lock(parentNode->mutex);
     if (row >= 0 && row < static_cast<int>(parentNode->children.size())) {
         return createIndex(row, column, parentNode->children[row].get());
@@ -41,12 +45,15 @@ QModelIndex FileTreeModel::index(int row, int column, const QModelIndex& parent)
     return QModelIndex();
 }
 
+/// Finds the parent index by locating the parent's row among the grandparent's children.
+/// The root and its direct children map to an invalid (top-level) index.
 QModelIndex FileTreeModel::parent(const QModelIndex& child) const {
     if (!child.isValid()) return QModelIndex();
 
     TreeNode* childNode = static_cast<TreeNode*>(child.internalPointer());
     if (!childNode) return QModelIndex();
 
+    // Items whose parent is the root are top-level rows in the view
     TreeNode* parentNode = childNode->parent;
     if (!parentNode || parentNode == m_root) {
         return QModelIndex();
@@ -56,6 +63,7 @@ QModelIndex FileTreeModel::parent(const QModelIndex& child) const {
     if (!grandParentNode) return QModelIndex();
 
     std::shared_lock<std::shared_mutex> lock(grandParentNode->mutex);
+    // Linear scan to learn which row the parent occupies under the grandparent
     auto it = std::find_if(grandParentNode->children.begin(), grandParentNode->children.end(),
         [parentNode](const std::unique_ptr<TreeNode>& ptr) {
             return ptr.get() == parentNode;
@@ -68,6 +76,7 @@ QModelIndex FileTreeModel::parent(const QModelIndex& child) const {
     return QModelIndex();
 }
 
+/// Returns the child count for directories; files always have zero rows.
 int FileTreeModel::rowCount(const QModelIndex& parent) const {
     if (!m_root) return 0;
 
@@ -84,10 +93,13 @@ int FileTreeModel::rowCount(const QModelIndex& parent) const {
     return static_cast<int>(parentNode->children.size());
 }
 
+/// Always six columns.
 int FileTreeModel::columnCount(const QModelIndex& /*parent*/) const {
     return 6; // Name, % of Parent, Size, Allocated, Files, Folders
 }
 
+/// Returns the value for one cell and role.
+/// Column 1 returns a percentage (as a number for UserRole, as text for DisplayRole).
 QVariant FileTreeModel::data(const QModelIndex& index, int role) const {
     if (!index.isValid()) return QVariant();
 
@@ -96,10 +108,12 @@ QVariant FileTreeModel::data(const QModelIndex& index, int role) const {
 
     if (role == Qt::DisplayRole || role == Qt::UserRole) {
         if (index.column() == 1) {
+            // Share of the parent's total size; stays 100 when the parent size is zero
             double pct = 100.0;
             if (node->parent && node->parent->size > 0) {
                 pct = (static_cast<double>(node->size) / node->parent->size) * 100.0;
             } else if (!node->parent && m_root && m_root->size > 0) {
+                // Defensive case: a node without a parent pointer is compared against the model root instead
                 // If it is the top level under root
                 pct = (static_cast<double>(node->size) / m_root->size) * 100.0;
             }
@@ -142,6 +156,7 @@ QVariant FileTreeModel::data(const QModelIndex& index, int role) const {
     return QVariant();
 }
 
+/// Returns the translated header text for each column.
 QVariant FileTreeModel::headerData(int section, Qt::Orientation orientation, int role) const {
     if (orientation == Qt::Horizontal && role == Qt::DisplayRole) {
         switch (section) {
@@ -157,10 +172,12 @@ QVariant FileTreeModel::headerData(int section, Qt::Orientation orientation, int
     return QVariant();
 }
 
+/// Formats bytes with 1024-based units (B to TB); whole numbers for bytes, two decimals otherwise.
 QString FileTreeModel::formatSize(uint64_t bytes) {
     double size = bytes;
     QStringList units = {"B", "KB", "MB", "GB", "TB"};
     int unitIndex = 0;
+    // Divide down until the value fits the largest suitable unit
     while (size >= 1024 && unitIndex < units.size() - 1) {
         size /= 1024;
         unitIndex++;
@@ -168,11 +185,14 @@ QString FileTreeModel::formatSize(uint64_t bytes) {
     return QString::number(size, 'f', unitIndex == 0 ? 0 : 2) + " " + units[unitIndex];
 }
 
+/// Sorts every directory's children by the given column and order.
+/// Equal values fall back to name order so the result is stable and predictable.
 void FileTreeModel::sort(int column, Qt::SortOrder order) {
     if (!m_root) return;
 
     beginResetModel();
 
+    // Generic lambda that calls itself through its 'self' parameter to recurse into subdirectories
     auto recursive_sort = [](auto& self, TreeNode* node, int col, Qt::SortOrder ord) -> void {
         std::sort(node->children.begin(), node->children.end(),
             [col, ord](const std::unique_ptr<TreeNode>& a, const std::unique_ptr<TreeNode>& b) {
@@ -234,6 +254,8 @@ void FileTreeModel::sort(int column, Qt::SortOrder order) {
     endResetModel();
 }
 
+/// Erases a node from its parent's children and tells the view about the removed row.
+/// Returns false if the index is invalid, has no parent, or the row is out of range.
 bool FileTreeModel::removeNode(const QModelIndex& index) {
     if (!index.isValid()) return false;
     TreeNode* node = static_cast<TreeNode*>(index.internalPointer());
@@ -242,10 +264,12 @@ bool FileTreeModel::removeNode(const QModelIndex& index) {
     if (!parentNode) return false;
 
     int row = index.row();
+    // Bounds-check the row under a read lock, then release before the model signals
     std::shared_lock<std::shared_mutex> size_lock(parentNode->mutex);
     if (row < 0 || row >= static_cast<int>(parentNode->children.size())) return false;
     size_lock.unlock();
 
+    // Announce the removal first, then erase under a write lock
     beginRemoveRows(index.parent(), row, row);
     {
         std::unique_lock<std::shared_mutex> lock(parentNode->mutex);
@@ -255,12 +279,15 @@ bool FileTreeModel::removeNode(const QModelIndex& index) {
     return true;
 }
 
+/// Constructs the delegate with the usual item-delegate parent.
 PercentDelegate::PercentDelegate(QObject* parent)
     : QStyledItemDelegate(parent) {}
 
+/// Paints the cell background, then a bar sized to the percentage, then the centered percent text.
 void PercentDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
+    // Draw the normal cell (selection, icons) without text; the text is drawn on top of the bar later
     opt.text.clear();
 
     if (opt.widget) {
@@ -269,11 +296,13 @@ void PercentDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
         QStyledItemDelegate::paint(painter, option, index);
     }
 
+    // Clamp to the 0-100 range so the bar never overflows the cell
     double pct = index.data(Qt::UserRole).toDouble();
     if (pct < 0.0) pct = 0.0;
     if (pct > 100.0) pct = 100.0;
 
     QRect rect = option.rect;
+    // Inset the bar slightly and scale its width by the percentage
     int margin = 2;
     QRect barRect = rect.adjusted(margin, margin, -margin, -margin);
     int barWidth = static_cast<int>(barRect.width() * (pct / 100.0));
@@ -286,6 +315,7 @@ void PercentDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
     painter->drawRect(barRect);
     painter->restore();
 
+    // Draw the percent text over the bar, using the selection color when the row is selected
     QString text = index.data(Qt::DisplayRole).toString();
     painter->save();
     QColor textColor = ThemeManager::instance().activeTheme().textPrimary;

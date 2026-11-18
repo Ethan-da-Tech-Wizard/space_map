@@ -1,3 +1,9 @@
+// ==============================================================================
+// Program: space_map - scanner_linux.cpp
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Linux implementation of Scanner::scan_directory using readdir, fstatat, and statx, with filtering of pseudo-filesystems.
+// ==============================================================================
 #include "scanner.hpp"
 #ifdef __linux__
 #include <dirent.h>
@@ -9,6 +15,7 @@
 #include <linux/stat.h>
 #include <cstring>
 
+// Minimal statx declarations for older headers that do not provide them
 #ifndef STATX_BASIC_STATS
 struct statx_timestamp {
     __int64_t tv_sec;
@@ -42,12 +49,16 @@ struct statx {
 #define STATX_BLOCKS 0x00000400U
 #endif
 
+/// Reads one directory: records each regular file's size and allocated size, queues subdirectories
+/// (skipping symlinks, other filesystems, virtual mounts and already-visited directories),
+/// and returns this directory's totals through the reference parameters.
 void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_node,
                              uint64_t& dir_files_size, uint64_t& dir_files_allocated,
                              uint64_t& dir_files_count, uint64_t& dir_subdirs_count) {
     DIR* dir = opendir(current_path.c_str());
     if (!dir) return;
 
+    // (dfd lets later stat calls use just the entry name)
     int dfd = dirfd(dir); // Get directory file descriptor for fast relative path calls
     if (dfd < 0) {
         closedir(dir);
@@ -83,6 +94,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
         // Skip symlinks
         if (entry->d_type == DT_LNK) continue;
 
+        // Directories: filter, check for loops, then queue for another worker
         if (entry->d_type == DT_DIR) {
             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
                                                         : current_path + "/" + d_name;
@@ -112,14 +124,17 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             add_task(full_path, child);
             dir_subdirs_count++;
         } else if (entry->d_type == DT_REG) {
+            // Regular files: read size and allocated size, store them on a new child node
             uint64_t fsize = 0;
             uint64_t allocated_size = 0;
 
+// Prefer statx (asks only for size and block count), falling back to fstatat
 #if defined(SYS_statx)
             struct statx stx;
             // Pass dfd and relative entry name to statx (avoids full path allocation)
             if (syscall(SYS_statx, dfd, d_name, AT_SYMLINK_NOFOLLOW, STATX_SIZE | STATX_BLOCKS, &stx) == 0) {
                 fsize = stx.stx_size;
+                // Block counts are in 512-byte units
                 allocated_size = stx.stx_blocks * 512;
             } else {
                 struct stat st;
@@ -148,6 +163,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             dir_files_allocated += allocated_size;
             dir_files_count++;
         } else if (entry->d_type == DT_UNKNOWN) {
+            // Some filesystems do not report entry types, so stat the entry to decide
             // Fallback for filesystems that do not return d_type
             struct stat st;
             if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {

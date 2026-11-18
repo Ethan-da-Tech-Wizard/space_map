@@ -1,8 +1,8 @@
 // ==============================================================================
-// Program: main.cpp
-// Programmer: Ethan-da-Tech-Wizard
-// Last Modified: November 18, 2026
-// Purpose: SpaceMap application entry point and Polkit elevation checker
+// Program: space_map - main.cpp
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Program entry point: optional pkexec elevation, startup self-tests, a headless benchmark mode, and launching the main window.
 // ==============================================================================
 #include "main_window.hpp"
 #include "tree_node.hpp"
@@ -19,6 +19,9 @@
 #include <unistd.h>
 #endif
 
+/// Starts SpaceMap.
+/// Command-line options: --elevate (re-run via pkexec), --test-only (run self-tests and exit),
+/// and --benchmark <path> (scan the path without a GUI and print timing).
 int main(int argc, char* argv[]) {
     // Check if running as administrator (root). By default, run as standard user.
     // Only elevate with pkexec if --elevate is explicitly passed.
@@ -33,6 +36,7 @@ int main(int argc, char* argv[]) {
 
 #ifndef _WIN32
     if (elevate && geteuid() != 0) {
+        // Build the pkexec command line; 'env' lets us pass display variables through to the root process
         std::vector<std::string> args = { "pkexec", "env" };
 
         // Pass X11/Wayland display environment variables so the root process can connect to the user's GUI session
@@ -56,6 +60,7 @@ int main(int argc, char* argv[]) {
         if (xdg_runtime_dir) args.push_back(std::string("XDG_RUNTIME_DIR=") + xdg_runtime_dir);
 
         // Resolve absolute path to the binary to avoid relative path lookup failures
+        // pkexec needs an absolute program path
         std::string abs_exe_path = std::filesystem::absolute(argv[0]).string();
         args.push_back(abs_exe_path);
 
@@ -63,17 +68,20 @@ int main(int argc, char* argv[]) {
             args.push_back(argv[i]);
         }
 
+        // execvp wants a null-terminated array of C strings
         std::vector<char*> c_args;
         for (auto& a : args) {
             c_args.push_back(const_cast<char*>(a.c_str()));
         }
         c_args.push_back(nullptr);
 
+        // execvp only returns on failure, in which case we continue as a normal user
         execvp("pkexec", c_args.data());
         std::cerr << "Warning: Failed to elevate privileges using pkexec. Proceeding as standard user." << "\n";
     }
 #endif
 
+    // (the self-tests also exercise the Scanner on a temporary folder)
     // Run TreeNode assertions first
     try {
         TreeNode::test_tree_node();
@@ -84,10 +92,12 @@ int main(int argc, char* argv[]) {
         std::cerr << "Warning: Unknown exception during self-tests." << "\n";
     }
 
+    // --test-only: stop after the self-tests
     if (argc > 1 && std::string(argv[1]) == "--test-only") {
         return 0;
     }
 
+    // --benchmark: scan without any GUI and report speed and memory use
     if (argc > 2 && std::string(argv[1]) == "--benchmark") {
         std::string scan_path = argv[2];
         std::cout << "Starting benchmark scan on: " << scan_path << "..." << "\n";
@@ -97,6 +107,7 @@ int main(int argc, char* argv[]) {
         Scanner scanner;
         scanner.start(scan_path);
 
+        // Poll until the worker threads finish
         while (scanner.running()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
@@ -108,6 +119,7 @@ int main(int argc, char* argv[]) {
         uint64_t dirs = scanner.dirs_scanned();
         uint64_t bytes = scanner.bytes_scanned();
 
+        // Guard against division by zero for very fast scans
         double seconds = duration / 1000.0;
         double files_per_sec = seconds > 0.0 ? files / seconds : files;
         double mb_per_sec = seconds > 0.0 ? (bytes / (1024.0 * 1024.0)) / seconds : 0.0;
@@ -121,6 +133,7 @@ int main(int argc, char* argv[]) {
         std::cout << "I/O Speed: " << mb_per_sec << " MB/sec" << "\n";
 
 #ifndef _WIN32
+        // Report peak memory; the division by 1024 assumes the value is in kilobytes (as on Linux)
         struct rusage usage;
         if (getrusage(RUSAGE_SELF, &usage) == 0) {
             std::cout << "Max RSS: " << (usage.ru_maxrss / 1024.0) << " MB" << "\n";
@@ -129,6 +142,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    // Normal GUI start-up
     QApplication app(argc, argv);
     MainWindow window;
     window.resize(1024, 768);
