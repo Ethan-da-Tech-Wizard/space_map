@@ -1,3 +1,10 @@
+// ==============================================================================
+// Program: main_window.cpp
+// Programmer: Ethan-da-Tech-Wizard
+// Course: CIS 156 / Advanced Systems
+// Last Modified: November 18, 2026
+// Purpose: Main GUI window, layout styling, tree views, context menus, and trash tools
+// ==============================================================================
 #include "main_window.hpp"
 #include "theme_dialog.hpp"
 #include <QHBoxLayout>
@@ -701,7 +708,7 @@ void MainWindow::onDriveSelected(int index) {
         }
 
         if (success) {
-            // Find the mount point from the output, e.g. "Mounted /dev/sda1 at /run/media/ethan/54BE3B12BE3AEC5C"
+            // Find the mount point from the output, e.g. "Mounted /dev/sda1 at /run/media/user/54BE3B12BE3AEC5C"
             int atIndex = output.indexOf(" at ");
             if (atIndex != -1) {
                 QString mountPath = output.mid(atIndex + 4).trimmed();

@@ -1,3 +1,10 @@
+// ==============================================================================
+// Program: scanner.cpp
+// Programmer: Ethan-da-Tech-Wizard
+// Course: CIS 156 / Advanced Systems
+// Last Modified: November 18, 2026
+// Purpose: Parallel multi-threaded filesystem crawler and disk space analyzer
+// ==============================================================================
 #include "scanner.hpp"
 #include <filesystem>
 #include <chrono>
