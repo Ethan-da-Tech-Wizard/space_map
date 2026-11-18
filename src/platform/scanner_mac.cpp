@@ -1,3 +1,9 @@
+// ==============================================================================
+// Program: space_map - scanner_mac.cpp
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: macOS implementation of Scanner::scan_directory using readdir and fstatat, skipping macOS pseudo-volume paths.
+// ==============================================================================
 #include "scanner.hpp"
 #ifdef __APPLE__
 #include <dirent.h>
@@ -7,6 +13,9 @@
 #include <fcntl.h>
 #include <cstring>
 
+/// Reads one directory: records each regular file's size and allocated size, queues subdirectories
+/// (skipping symlinks, other filesystems and already-visited directories),
+/// and returns this directory's totals through the reference parameters.
 void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_node,
                              uint64_t& dir_files_size, uint64_t& dir_files_allocated,
                              uint64_t& dir_files_count, uint64_t& dir_subdirs_count) {
@@ -49,6 +58,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
         // Skip symlinks
         if (entry->d_type == DT_LNK) continue;
 
+        // Directories: filter, check for loops, then queue for another worker
         if (entry->d_type == DT_DIR) {
             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
                                                         : current_path + "/" + d_name;
@@ -76,12 +86,14 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             add_task(full_path, child);
             dir_subdirs_count++;
         } else if (entry->d_type == DT_REG) {
+            // Regular files: read size and allocated size, store them on a new child node
             // Use fstatat with relative name — avoids constructing full_path entirely for files
             struct stat st;
             uint64_t fsize = 0;
             uint64_t allocated_size = 0;
             if (fstatat(dfd, d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
                 fsize = st.st_size;
+                // Block counts are in 512-byte units
                 allocated_size = st.st_blocks * 512;
             }
 
@@ -97,6 +109,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             dir_files_allocated += allocated_size;
             dir_files_count++;
         } else if (entry->d_type == DT_UNKNOWN) {
+            // d_type may be unset on some filesystems, so stat the entry to decide
             // Fallback for filesystems that do not populate d_type (e.g. some network mounts)
             struct stat st;
             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)

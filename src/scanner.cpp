@@ -1,8 +1,8 @@
 // ==============================================================================
-// Program: scanner.cpp
-// Programmer: Ethan-da-Tech-Wizard
-// Last Modified: November 18, 2026
-// Purpose: Parallel multi-threaded filesystem crawler and disk space analyzer
+// Program: space_map - scanner.cpp
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Implements the Scanner: worker thread pool, task queue, pause/resume/cancel, progress reporting, and a built-in self-test.
 // ==============================================================================
 #include "scanner.hpp"
 #include <filesystem>
@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+// Provide S_ISDIR on platforms whose headers lack it
 #ifndef S_ISDIR
 #define S_ISDIR(mode) (((mode) & S_IFMT) == S_IFDIR)
 #endif
@@ -23,12 +24,15 @@
 #include <sys/resource.h>
 #endif
 
+/// Constructs an idle scanner.
 Scanner::Scanner(QObject* parent) : QObject(parent) {}
 
+/// Stops any scan still in progress before the object is destroyed.
 Scanner::~Scanner() {
     cancel();
 }
 
+/// Cancels any scan and clears the tree, counters, visited set, and task queue.
 void Scanner::reset() {
     cancel();
     m_root_node.reset();
@@ -49,6 +53,9 @@ void Scanner::reset() {
     }
 }
 
+/// Begins a scan of root_path: resets state, reads filesystem capacity, queues the root
+/// directory, and launches one worker thread per logical core.
+/// Emits finished() right away if the path is not a directory.
 void Scanner::start(const std::string& root_path) {
     reset();
 
@@ -56,8 +63,10 @@ void Scanner::start(const std::string& root_path) {
     m_paused = false;
     m_cancelled = false;
 
+    // The root node is named with the path exactly as the caller gave it
     m_root_node = std::make_unique<TreeNode>(root_path, true);
 
+    // (falls back to the given path if absolute() fails)
     // Get absolute path
     std::error_code ec;
     std::string abs_path = std::filesystem::absolute(root_path, ec).string();
@@ -84,6 +93,7 @@ void Scanner::start(const std::string& root_path) {
     }
 #endif
 
+    // The root must be an existing directory; remember its device so the scan stays on one filesystem
     struct stat st;
     if (stat(abs_path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
         m_root_dev = st.st_dev;
@@ -99,6 +109,7 @@ void Scanner::start(const std::string& root_path) {
     }
 
     // Pre-allocate task queue to avoid repeated heap reallocations during scan burst
+    // (queue was already seeded above; reserve is only a capacity hint)
     m_task_queue.reserve(4096);
 
     // Use all available logical cores. Scanning is I/O-bound and SSDs handle
@@ -113,15 +124,18 @@ void Scanner::start(const std::string& root_path) {
     }
 }
 
+/// Asks workers to hold before starting their next directory.
 void Scanner::pause() {
     m_paused = true;
 }
 
+/// Releases paused workers.
 void Scanner::resume() {
     m_paused = false;
     m_pause_cv.notify_all();
 }
 
+/// Stops the scan: wakes every waiting thread, joins them, and emits finished() if a scan was running.
 void Scanner::cancel() {
     bool was_running = m_running;
     m_cancelled = true;
@@ -142,6 +156,8 @@ void Scanner::cancel() {
     }
 }
 
+/// Pushes a directory onto the work queue and wakes one worker.
+/// Paths with more than 100 separators are ignored as a safeguard against runaway depth.
 void Scanner::add_task(const std::string& path, TreeNode* parent_node) {
     // Security check: limit directory traversal depth to prevent stack/OOM loop exploits
     constexpr size_t kMaxDepth = 100;
@@ -158,10 +174,13 @@ void Scanner::add_task(const std::string& path, TreeNode* parent_node) {
     m_queue_cv.notify_one();
 }
 
+/// Pops the next directory for a worker, waiting if the queue is empty.
+/// The last idle worker seeing an empty queue marks the scan finished.
 bool Scanner::get_next_task(std::string& path, TreeNode*& parent_node) {
     std::unique_lock<std::mutex> lock(m_queue_mutex);
     
     // Decrement active workers to indicate this thread is now waiting
+    // Count this worker as idle while it waits
     m_active_workers--;
 
     // If all threads are waiting and queue is empty, the scan is finished
@@ -184,6 +203,7 @@ bool Scanner::get_next_task(std::string& path, TreeNode*& parent_node) {
         return false;
     }
 
+    // LIFO order: newest directories first, which keeps the queue small (depth-first style)
     auto task = m_task_queue.back();
     m_task_queue.pop_back();
     path = std::move(task.path);
@@ -191,10 +211,13 @@ bool Scanner::get_next_task(std::string& path, TreeNode*& parent_node) {
     return true;
 }
 
+/// Main loop for one worker thread: honors pause/cancel, scans directories,
+/// adds each directory's totals to the tree and counters, and emits throttled progress updates.
 void Scanner::worker_loop() {
 #ifdef _WIN32
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
 #else
+    // Lower priority so the scan does not make the rest of the system sluggish
     setpriority(PRIO_PROCESS, 0, 10);
 #endif
 
@@ -225,6 +248,7 @@ void Scanner::worker_loop() {
         uint64_t dir_subdirs_count = 0;
 
         try {
+            // Totals for this one directory are gathered locally, then published once
             scan_directory(current_path, parent_node, dir_files_size, dir_files_allocated, dir_files_count, dir_subdirs_count);
 
             if (dir_files_size > 0 || dir_files_allocated > 0 || dir_files_count > 0 || dir_subdirs_count > 0) {
@@ -236,11 +260,13 @@ void Scanner::worker_loop() {
                 
                 files_since_update += dir_files_count + dir_subdirs_count;
             }
+        // (an unreadable directory should not stop the worker)
         } catch (...) {
             // Fail-safe to keep thread running
         }
 
         // Periodically emit progress updates to the main thread
+        // Emit progress at most every 100 ms, or sooner after many entries
         constexpr auto kUpdateInterval = std::chrono::milliseconds(100);
         constexpr uint64_t kUpdateBatchThreshold = 2000;
         auto now = std::chrono::steady_clock::now();
@@ -255,9 +281,11 @@ void Scanner::worker_loop() {
     emit progressUpdated(m_files_scanned.load(), m_dirs_scanned.load(), m_bytes_scanned.load());
 }
 
+// ---- Progress and self-test ----
 #include <fstream>
 #include <cassert>
 
+/// Returns percent complete, capped at 99 until the scan actually finishes.
 double Scanner::progress_percentage() const {
     if (!m_running) return 100.0;
     uint64_t target = m_total_target_bytes.load();
@@ -267,6 +295,8 @@ double Scanner::progress_percentage() const {
     return pct;
 }
 
+/// Self-test: builds a small temporary folder tree, scans it, checks counts and sizes,
+/// and removes the folder afterwards.
 void Scanner::test_scanner() {
     std::filesystem::path test_dir = std::filesystem::temp_directory_path() / "spacemap_test_scan_temp";
     std::filesystem::create_directories(test_dir / "sub1" / "sub2");

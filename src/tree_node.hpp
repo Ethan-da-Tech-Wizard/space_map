@@ -1,3 +1,9 @@
+// ==============================================================================
+// Program: space_map - tree_node.hpp
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Declares TreeNode, the thread-safe directory tree node that holds size, file and folder totals for the scan results.
+// ==============================================================================
 #pragma once
 #include <string>
 #include <vector>
@@ -7,17 +13,26 @@
 #include <string_view>
 #include <atomic>
 
+/// One entry (file or directory) in the scanned tree.
+/// Counters are atomic so scanner threads can add to them concurrently;
+/// the children vector is protected by a reader-writer mutex.
 struct TreeNode {
+    // Entry name only (not the full path)
     std::string name;
+    // Totals below include everything beneath this node when it is a directory
     std::atomic<uint64_t> size{0};
     std::atomic<uint64_t> allocated_size{0};
     std::atomic<uint64_t> file_count{0};
     std::atomic<uint64_t> dir_count{0};
+    // True for directories, false for files
     bool is_dir = false;
+    // Non-owning pointer to the parent; null for the root
     TreeNode* parent = nullptr;
+    // Owning list of children; inserts keep it name-sorted for binary search (sort_children_by_size reorders it)
     std::vector<std::unique_ptr<TreeNode>> children;
     mutable std::shared_mutex mutex; // Protects children vector
 
+    /// Creates a node with the given name, type, and optional parent.
     TreeNode(std::string n, bool dir, TreeNode* p = nullptr);
     ~TreeNode() = default;
 

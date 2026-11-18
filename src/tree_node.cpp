@@ -1,13 +1,14 @@
 // ==============================================================================
-// Program: tree_node.cpp
-// Programmer: Ethan-da-Tech-Wizard
-// Last Modified: November 18, 2026
-// Purpose: Thread-safe prefix path compressed node trees storing disk usage statistics
+// Program: space_map - tree_node.cpp
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Implements TreeNode: sorted child lookup and insertion under a reader-writer lock, upward statistics propagation, size sorting, and a built-in self-test.
 // ==============================================================================
 #include "tree_node.hpp"
 #include <algorithm>
 #include <mutex>
 
+/// Constructs a node; directories pre-reserve room for children to limit early reallocations.
 TreeNode::TreeNode(std::string n, bool dir, TreeNode* p)
     : name(std::move(n)), is_dir(dir), parent(p) {
     if (is_dir) {
@@ -15,8 +16,11 @@ TreeNode::TreeNode(std::string n, bool dir, TreeNode* p)
     }
 }
 
+/// Looks up a child by name with a binary search under a shared (read) lock.
+/// Returns null when no child has that name.
 TreeNode* TreeNode::find_child(std::string_view child_name) const {
     std::shared_lock lock(mutex);
+    // Binary search for the first child whose name is not less than the target
     auto it = std::lower_bound(children.begin(), children.end(), child_name,
         [](const std::unique_ptr<TreeNode>& node, std::string_view name) {
             return node->name < name;
@@ -27,6 +31,8 @@ TreeNode* TreeNode::find_child(std::string_view child_name) const {
     return nullptr;
 }
 
+/// Returns the named child, inserting it in sorted position when absent.
+/// Uses double-checked locking so the common 'already exists' case only needs a read lock.
 TreeNode* TreeNode::get_or_create_child(std::string_view child_name, bool child_is_dir) {
     // 1. Double-checked locking pattern: first try with a read lock
     {
@@ -59,7 +65,10 @@ TreeNode* TreeNode::get_or_create_child(std::string_view child_name, bool child_
     return ptr;
 }
 
+/// Adds the given deltas to this node and every ancestor up to the root.
+/// Atomic adds mean concurrent scanner threads can call this without extra locking.
 void TreeNode::propagate_stats(uint64_t size_delta, uint64_t allocated_delta, uint64_t files_delta, uint64_t dirs_delta) {
+    // Walk upward from this node so every ancestor total stays correct
     TreeNode* current = this;
     while (current != nullptr) {
         current->size += size_delta;
@@ -70,6 +79,8 @@ void TreeNode::propagate_stats(uint64_t size_delta, uint64_t allocated_delta, ui
     }
 }
 
+/// Orders children by size, largest first (ties by name), optionally for the whole subtree.
+/// Takes the write lock for this node while it reorders.
 void TreeNode::sort_children_by_size(bool recursive) {
     std::unique_lock lock(mutex);
     std::sort(children.begin(), children.end(),
@@ -87,10 +98,13 @@ void TreeNode::sort_children_by_size(bool recursive) {
     }
 }
 
+// ---- Self-test support ----
 #include <cassert>
 #include <iostream>
 #include <thread>
 
+/// Self-test: checks child creation, stats propagation, sorting, and concurrent inserts.
+/// Uses assert, so failures only show in builds where assertions are enabled.
 void TreeNode::test_tree_node() {
     auto root = std::make_unique<TreeNode>("/", true);
     
@@ -127,6 +141,7 @@ void TreeNode::test_tree_node() {
     assert(user->children[0]->name == "file2.txt");
     assert(user->children[1]->name == "file1.txt");
 
+    // Ten threads each add 100 files to the same parent to exercise the locking
     // Test multi-threaded insertion safety
     std::vector<std::thread> threads;
     for (int i = 0; i < 10; ++i) {

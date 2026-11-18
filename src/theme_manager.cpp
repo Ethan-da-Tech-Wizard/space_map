@@ -1,22 +1,32 @@
+// ==============================================================================
+// Program: space_map - theme_manager.cpp
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Implements ThemeManager: preset management, JSON and settings persistence, stylesheet generation, and the built-in presets.
+// ==============================================================================
 #include "theme_manager.hpp"
 #include <QJsonDocument>
 
+/// Creates the built-in presets and starts with the first one active.
 ThemeManager::ThemeManager() {
     initBuiltinPresets();
     m_activeTheme = m_builtinPresets[0];
 }
 
+/// Returns the lazily created singleton (function-local static, thread-safe in C++11).
 ThemeManager& ThemeManager::instance() {
     static ThemeManager inst;
     return inst;
 }
 
+// Simple accessors
 const QVector<Theme>& ThemeManager::builtinPresets() const { return m_builtinPresets; }
 const QVector<Theme>& ThemeManager::userPresets() const { return m_userPresets; }
 const Theme& ThemeManager::activeTheme() const { return m_activeTheme; }
 int ThemeManager::activePresetIndex() const { return m_activePresetIndex; }
 bool ThemeManager::isActiveUserPreset() const { return m_isUserPreset; }
 
+/// Activates a built-in preset by index (ignored if out of range) and notifies listeners.
 void ThemeManager::applyBuiltinPreset(int index) {
     if (index < 0 || index >= m_builtinPresets.size()) return;
     m_activePresetIndex = index;
@@ -25,6 +35,7 @@ void ThemeManager::applyBuiltinPreset(int index) {
     emit themeChanged();
 }
 
+/// Activates a user preset by index (ignored if out of range) and notifies listeners.
 void ThemeManager::applyUserPreset(int index) {
     if (index < 0 || index >= m_userPresets.size()) return;
     m_activePresetIndex = index;
@@ -33,11 +44,13 @@ void ThemeManager::applyUserPreset(int index) {
     emit themeChanged();
 }
 
+/// Sets the active theme directly and notifies listeners.
 void ThemeManager::applyTheme(const Theme& theme) {
     m_activeTheme = theme;
     emit themeChanged();
 }
 
+/// Appends a copy of the theme as a user preset; a blank name becomes 'User Preset N'.
 int ThemeManager::saveUserPreset(const Theme& theme) {
     Theme t = theme;
     if (t.name.isEmpty()) {
@@ -47,16 +60,19 @@ int ThemeManager::saveUserPreset(const Theme& theme) {
     return m_userPresets.size() - 1;
 }
 
+/// Removes the user preset at the index, if valid.
 void ThemeManager::deleteUserPreset(int index) {
     if (index < 0 || index >= m_userPresets.size()) return;
     m_userPresets.removeAt(index);
 }
 
+/// Renames the user preset at the index, if valid.
 void ThemeManager::renameUserPreset(int index, const QString& name) {
     if (index < 0 || index >= m_userPresets.size()) return;
     m_userPresets[index].name = name;
 }
 
+/// Serializes every color of a theme (as hex text) into a JSON object.
 QJsonObject ThemeManager::themeToJson(const Theme& t) const {
     QJsonObject obj;
     obj["name"] = t.name;
@@ -97,6 +113,7 @@ QJsonObject ThemeManager::themeToJson(const Theme& t) const {
     return obj;
 }
 
+/// Reads a theme back from JSON; a missing key yields an invalid (empty) color.
 Theme ThemeManager::themeFromJson(const QJsonObject& obj) const {
     Theme t;
     t.name = obj["name"].toString();
@@ -137,6 +154,7 @@ Theme ThemeManager::themeFromJson(const QJsonObject& obj) const {
     return t;
 }
 
+/// Writes the active selection and the user presets (as compact JSON text) to QSettings.
 void ThemeManager::saveSettings() const {
     QSettings settings("SpaceMap", "SpaceMap");
     settings.setValue("theme/activeIndex", m_activePresetIndex);
@@ -149,6 +167,7 @@ void ThemeManager::saveSettings() const {
     settings.setValue("theme/userPresets", QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
 }
 
+/// Reads saved presets and selection, falling back to the first built-in preset when the saved index is invalid.
 void ThemeManager::loadSettings() {
     QSettings settings("SpaceMap", "SpaceMap");
     int idx = settings.value("theme/activeIndex", 0).toInt();
@@ -174,6 +193,7 @@ void ThemeManager::loadSettings() {
     }
 }
 
+/// Builds the application stylesheet text; theme colors are substituted into numbered placeholders.
 QString ThemeManager::generateStylesheet(const Theme& t) const {
     auto cn = [](const QColor& c) { return c.name(QColor::HexArgb); };
     auto hex = [](const QColor& c) { return c.name(); };
@@ -321,10 +341,12 @@ QString ThemeManager::generateStylesheet(const Theme& t) const {
     .arg(hex(t.hudBorder));      // 38
 }
 
+// Helper macros for preset initialization (not used by the presets below, which are written out in full)
 // Helper macro to reduce repetition for preset initialization
 #define PRESET(NAME) do { Theme t; t.name = NAME;
 #define END_PRESET m_builtinPresets.append(t); } while(0)
 
+/// Defines every built-in color preset.
 void ThemeManager::initBuiltinPresets() {
     m_builtinPresets.clear();
 
