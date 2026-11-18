@@ -1,7 +1,6 @@
 // ==============================================================================
 // Program: main_window.cpp
 // Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
 // Last Modified: November 18, 2026
 // Purpose: Main GUI window, layout styling, tree views, context menus, and trash tools
 // ==============================================================================
