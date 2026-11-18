@@ -1,7 +1,6 @@
 // ==============================================================================
 // Program: tree_node.cpp
 // Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
 // Last Modified: November 18, 2026
 // Purpose: Thread-safe prefix path compressed node trees storing disk usage statistics
 // ==============================================================================

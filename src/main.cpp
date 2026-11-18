@@ -1,7 +1,6 @@
 // ==============================================================================
 // Program: main.cpp
 // Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
 // Last Modified: November 18, 2026
 // Purpose: SpaceMap application entry point and Polkit elevation checker
 // ==============================================================================
