@@ -1,3 +1,10 @@
+// ==============================================================================
+// theme_dialog.cpp - "Customize Layout" dialog implementation.
+//
+// Colour edits are applied immediately (live preview on the parent window via
+// ThemeManager). The dialog remembers the theme that was active when it was
+// opened so "Reset" can restore it.
+// ==============================================================================
 #include "theme_dialog.hpp"
 #include <QHBoxLayout>
 #include <QLabel>
@@ -8,6 +15,7 @@
 #include <QMessageBox>
 #include <QScrollBar>
 
+// Snapshot the active theme as both the original and the working copy.
 ThemeDialog::ThemeDialog(QWidget* parent) : QDialog(parent) {
     m_originalTheme = ThemeManager::instance().activeTheme();
     m_editingTheme = m_originalTheme;
@@ -498,6 +506,8 @@ void ThemeDialog::addColorSection(QVBoxLayout* layout, const QString& title) {
     layout->addWidget(header);
 }
 
+// Plain-language description for each colour field, shown as help text; unknown
+// names get a generic hint.
 static QString getFieldHelpText(const QString& fieldName) {
     if (fieldName == "windowBg") return "Changes the main background color of the entire window area.";
     if (fieldName == "panelBg") return "Changes the background color of inner panels and containers.";
@@ -597,6 +607,7 @@ void ThemeDialog::addColorRow(QVBoxLayout* layout, const QString& label, const Q
     layout->addLayout(row);
 }
 
+// Copy a theme into the working copy and refresh every swatch and hex box.
 void ThemeDialog::loadThemeIntoEditor(const Theme& theme) {
     m_editingTheme = theme;
 
@@ -611,6 +622,7 @@ void ThemeDialog::loadThemeIntoEditor(const Theme& theme) {
     }
 }
 
+// Live preview: make the working copy the active theme and restyle the parent.
 void ThemeDialog::applyEditingTheme() {
     ThemeManager::instance().applyTheme(m_editingTheme);
     if (parentWidget()) {
@@ -626,6 +638,7 @@ void ThemeDialog::updateColorButton(const QString& fieldName, const QColor& colo
     }
 }
 
+// String-to-member mapping that lets one set of handlers edit all colours.
 QColor& ThemeDialog::getColorRef(const QString& f) {
     if (f == "windowBg") return m_editingTheme.windowBg;
     if (f == "panelBg") return m_editingTheme.panelBg;
@@ -684,6 +697,7 @@ void ThemeDialog::onPresetClicked(int index, bool isUserPreset) {
     rebuildPresetGrid();
 }
 
+// Opens the colour picker (with alpha channel) and applies the chosen colour.
 void ThemeDialog::onColorButtonClicked(const QString& fieldName) {
     QColor current = getColorRef(fieldName);
     QColor chosen = QColorDialog::getColor(current, this, tr("Pick Color"),
@@ -698,6 +712,7 @@ void ThemeDialog::onColorButtonClicked(const QString& fieldName) {
     }
 }
 
+// Accepts any colour string QColor understands; invalid text is ignored.
 void ThemeDialog::onHexEditFinished(const QString& fieldName) {
     if (!m_hexInputs.contains(fieldName)) return;
     QString hex = m_hexInputs[fieldName]->text().trimmed();

@@ -1,11 +1,21 @@
+// ==============================================================================
+// theme_manager.cpp - theme singleton: presets, persistence and stylesheet.
+//
+// User presets and the active selection are stored with QSettings under the
+// organisation/application "SpaceMap"; presets are serialised as a JSON array
+// of colour strings. generateStylesheet() expands a Theme into one large Qt
+// stylesheet applied to the main window.
+// ==============================================================================
 #include "theme_manager.hpp"
 #include <QJsonDocument>
 
+// Fills the built-in presets and starts with the first one active.
 ThemeManager::ThemeManager() {
     initBuiltinPresets();
     m_activeTheme = m_builtinPresets[0];
 }
 
+// Function-local static: created on first use and thread-safe in C++11.
 ThemeManager& ThemeManager::instance() {
     static ThemeManager inst;
     return inst;
@@ -17,6 +27,8 @@ const Theme& ThemeManager::activeTheme() const { return m_activeTheme; }
 int ThemeManager::activePresetIndex() const { return m_activePresetIndex; }
 bool ThemeManager::isActiveUserPreset() const { return m_isUserPreset; }
 
+// The apply* functions change the active theme and emit themeChanged() so
+// windows re-apply their stylesheet.
 void ThemeManager::applyBuiltinPreset(int index) {
     if (index < 0 || index >= m_builtinPresets.size()) return;
     m_activePresetIndex = index;
@@ -38,6 +50,8 @@ void ThemeManager::applyTheme(const Theme& theme) {
     emit themeChanged();
 }
 
+// Appends a copy (auto-named when blank) and returns its index; persisting is a
+// separate saveSettings() call.
 int ThemeManager::saveUserPreset(const Theme& theme) {
     Theme t = theme;
     if (t.name.isEmpty()) {
@@ -149,6 +163,8 @@ void ThemeManager::saveSettings() const {
     settings.setValue("theme/userPresets", QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
 }
 
+// Restore user presets, then the previously active preset; any out-of-range or
+// missing value falls back to built-in preset 0.
 void ThemeManager::loadSettings() {
     QSettings settings("SpaceMap", "SpaceMap");
     int idx = settings.value("theme/activeIndex", 0).toInt();
@@ -174,6 +190,8 @@ void ThemeManager::loadSettings() {
     }
 }
 
+// `cn` formats a colour with alpha (#AARRGGBB) and `hex` without alpha; the
+// arguments are substituted positionally (%1, %2, ...) into the template.
 QString ThemeManager::generateStylesheet(const Theme& t) const {
     auto cn = [](const QColor& c) { return c.name(QColor::HexArgb); };
     auto hex = [](const QColor& c) { return c.name(); };
@@ -325,6 +343,8 @@ QString ThemeManager::generateStylesheet(const Theme& t) const {
 #define PRESET(NAME) do { Theme t; t.name = NAME;
 #define END_PRESET m_builtinPresets.append(t); } while(0)
 
+// Each preset assigns every Theme colour explicitly; the first, Midnight, is the
+// default dark theme.
 void ThemeManager::initBuiltinPresets() {
     m_builtinPresets.clear();
 

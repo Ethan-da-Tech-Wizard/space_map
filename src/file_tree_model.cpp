@@ -16,12 +16,18 @@
 FileTreeModel::FileTreeModel(TreeNode* root, QObject* parent)
     : QAbstractItemModel(parent), m_root(root) {}
 
+// beginResetModel/endResetModel tell attached views to discard cached indexes
+// because every TreeNode pointer they hold may now be invalid.
 void FileTreeModel::setRootNode(TreeNode* root) {
     beginResetModel();
     m_root = root;
     endResetModel();
 }
 
+// Build an index for child `row` of `parent` (the invisible root when parent is
+// invalid). The node pointer is stored as the index's internal pointer. The
+// parent's children are read under its shared lock because scanner threads may
+// still be inserting.
 QModelIndex FileTreeModel::index(int row, int column, const QModelIndex& parent) const {
     if (!m_root) return QModelIndex();
 
@@ -41,6 +47,9 @@ QModelIndex FileTreeModel::index(int row, int column, const QModelIndex& parent)
     return QModelIndex();
 }
 
+// Qt needs the row of the parent inside the grandparent, which is found by a
+// linear search of the grandparent's children. Children of the root report an
+// invalid parent (they are top-level rows).
 QModelIndex FileTreeModel::parent(const QModelIndex& child) const {
     if (!child.isValid()) return QModelIndex();
 
@@ -68,6 +77,7 @@ QModelIndex FileTreeModel::parent(const QModelIndex& child) const {
     return QModelIndex();
 }
 
+// Files have no rows; directories report their current child count.
 int FileTreeModel::rowCount(const QModelIndex& parent) const {
     if (!m_root) return 0;
 
@@ -88,6 +98,9 @@ int FileTreeModel::columnCount(const QModelIndex& /*parent*/) const {
     return 6; // Name, % of Parent, Size, Allocated, Files, Folders
 }
 
+// Qt::UserRole on column 1 returns the raw percentage (a double) for
+// PercentDelegate; Qt::DisplayRole returns the formatted text. Percent is the
+// node's size relative to its parent's size (100 if the parent is empty).
 QVariant FileTreeModel::data(const QModelIndex& index, int role) const {
     if (!index.isValid()) return QVariant();
 
@@ -157,6 +170,7 @@ QVariant FileTreeModel::headerData(int section, Qt::Orientation orientation, int
     return QVariant();
 }
 
+// Binary units (1 KB = 1024 B) up to TB; bytes show no decimals, others two.
 QString FileTreeModel::formatSize(uint64_t bytes) {
     double size = bytes;
     QStringList units = {"B", "KB", "MB", "GB", "TB"};
@@ -168,6 +182,10 @@ QString FileTreeModel::formatSize(uint64_t bytes) {
     return QString::number(size, 'f', unitIndex == 0 ? 0 : 2) + " " + units[unitIndex];
 }
 
+// Sorts in place without taking node locks, so it should not run while a scan
+// is writing to the tree. Ties fall back to name for a stable, deterministic
+// order. NOTE: after this, children are no longer name-sorted, so
+// TreeNode::find_child (binary search by name) is not reliable for these nodes.
 void FileTreeModel::sort(int column, Qt::SortOrder order) {
     if (!m_root) return;
 
@@ -234,6 +252,9 @@ void FileTreeModel::sort(int column, Qt::SortOrder order) {
     endResetModel();
 }
 
+// beginRemoveRows/endRemoveRows bracket the erase so views update correctly.
+// The bounds check uses a shared lock, which is released before taking the
+// exclusive lock for the actual removal.
 bool FileTreeModel::removeNode(const QModelIndex& index) {
     if (!index.isValid()) return false;
     TreeNode* node = static_cast<TreeNode*>(index.internalPointer());
@@ -258,6 +279,9 @@ bool FileTreeModel::removeNode(const QModelIndex& index) {
 PercentDelegate::PercentDelegate(QObject* parent)
     : QStyledItemDelegate(parent) {}
 
+// Draw the normal cell background without text, then a filled bar proportional
+// to the percentage (clamped to 0-100, 2 px inset) in the theme's bar colour,
+// then the percentage text centred on top (highlight colour when selected).
 void PercentDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
