@@ -177,12 +177,17 @@ int main(int argc, char* argv[]) {
         std::cout << "Throughput: " << files_per_sec << " files/sec" << "\n";
         std::cout << "I/O Speed: " << mb_per_sec << " MB/sec" << "\n";
 
-// getrusage is POSIX; ru_maxrss is peak resident memory. Linux reports it in
-        // KiB, hence the /1024 to get MiB.
 #ifndef _WIN32
+        // getrusage is POSIX; ru_maxrss is peak resident memory. Linux reports it in
+        // KiB (hence /1024 to get MiB) but macOS reports BYTES, so it needs /(1024*1024).
         struct rusage usage;
         if (getrusage(RUSAGE_SELF, &usage) == 0) {
-            std::cout << "Max RSS: " << (usage.ru_maxrss / 1024.0) << " MB" << "\n";
+#ifdef __APPLE__
+            const double rss_divisor = 1024.0 * 1024.0;
+#else
+            const double rss_divisor = 1024.0;
+#endif
+            std::cout << "Max RSS: " << (usage.ru_maxrss / rss_divisor) << " MB" << "\n";
         }
 #endif
         return 0;
