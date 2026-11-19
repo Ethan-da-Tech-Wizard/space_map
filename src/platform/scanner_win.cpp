@@ -1,8 +1,18 @@
+// ==============================================================================
+// scanner_win.cpp - Windows implementation of Scanner::scan_directory.
+//
+// Uses FindFirstFileW/FindNextFileW (wide-character API) so non-ASCII names
+// work. Paths are kept as UTF-8 inside the program and converted at the API
+// boundary. Reparse points (symlinks, junctions) are skipped. Compiled only on
+// Windows.
+// ==============================================================================
 #include "scanner.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #include <string>
 
+// Two-call pattern: first query the required length, then convert; the
+// trailing NUL that the API counts is removed.
 // Helper to convert UTF-8 string to UTF-16 wstring
 static std::wstring utf8_to_utf16(const std::string& utf8) {
     if (utf8.empty()) return L"";
@@ -26,6 +36,7 @@ static std::string utf16_to_utf8(const std::wstring& utf16) {
 void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_node,
                              uint64_t& dir_files_size, uint64_t& dir_files_allocated,
                              uint64_t& dir_files_count, uint64_t& dir_subdirs_count) {
+    // Build the "<dir>\*" wildcard pattern that FindFirstFileW expects.
     std::string search_path = current_path;
     if (search_path.back() != '\\' && search_path.back() != '/') {
         search_path += "\\*";
@@ -65,6 +76,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             full_path += name;
         }
 
+        // Junctions and symlinks can create loops or point at other volumes.
         // Skip reparse points (symlinks/junctions) to prevent infinite loops
         if (find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
             continue;
@@ -78,6 +90,8 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             uint64_t fsize = (static_cast<uint64_t>(find_data.nFileSizeHigh) << 32) | find_data.nFileSizeLow;
             uint64_t allocated_size = fsize;
 
+            // GetCompressedFileSizeW returns the on-disk size (smaller for NTFS-compressed
+            // or sparse files). On failure the logical size is used instead.
             // Get compressed/allocated size on disk
             std::wstring wfull_path = utf8_to_utf16(full_path);
             DWORD high_size = 0;

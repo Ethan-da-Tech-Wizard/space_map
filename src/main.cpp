@@ -20,6 +20,8 @@
 #endif
 
 int main(int argc, char* argv[]) {
+    // Optional elevation: only when the user passes --elevate, relaunch the same
+    // program through pkexec (Polkit) so it can read protected directories.
     // Check if running as administrator (root). By default, run as standard user.
     // Only elevate with pkexec if --elevate is explicitly passed.
     bool elevate = false;
@@ -33,6 +35,10 @@ int main(int argc, char* argv[]) {
 
 #ifndef _WIN32
     if (elevate && geteuid() != 0) {
+        // pkexec drops most of the environment, so the display-related variables are
+        // forwarded explicitly (via `env`) for the root process to reach the user's X11
+        // or Wayland session. execvp only returns on failure, in which case the program
+        // continues as a normal user.
         std::vector<std::string> args = { "pkexec", "env" };
 
         // Pass X11/Wayland display environment variables so the root process can connect to the user's GUI session
@@ -74,6 +80,8 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
+    // Built-in self-tests run on every start (they use assert(), so they are
+    // active only in non-NDEBUG builds). Failures are reported but non-fatal.
     // Run TreeNode assertions first
     try {
         TreeNode::test_tree_node();
@@ -84,6 +92,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "Warning: Unknown exception during self-tests." << "\n";
     }
 
+    // Command-line modes: --test-only runs just the self-tests; --benchmark <path>
+    // scans a path without the GUI and prints throughput; otherwise the Qt GUI starts.
     if (argc > 1 && std::string(argv[1]) == "--test-only") {
         return 0;
     }
