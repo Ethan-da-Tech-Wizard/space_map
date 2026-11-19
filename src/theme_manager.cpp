@@ -5,22 +5,44 @@
 // organisation/application "SpaceMap"; presets are serialised as a JSON array
 // of colour strings. generateStylesheet() expands a Theme into one large Qt
 // stylesheet applied to the main window.
+//
+// How it fits: MainWindow and ThemeDialog talk to ThemeManager::instance().
+// The dialog edits a Theme and calls applyTheme()/saveUserPreset(); the
+// window listens to themeChanged() and re-applies generateStylesheet();
+// PercentDelegate (file_tree_model.cpp) reads activeTheme() directly for the
+// bar and text colours.
+//
+// Persistence: QSettings("SpaceMap", "SpaceMap") keys theme/activeIndex,
+// theme/isUserPreset and theme/userPresets. The last one is a compact JSON
+// array of objects (one per preset, name plus one "#AARRGGBB" string per
+// colour field). Where QSettings puts the file is OS specific (plist, ini or registry).
+//
+// Known limits: themeFromJson does not validate colours, so a hand-edited or
+// older settings file with a missing key yields an invalid (black/transparent)
+// colour; deleteUserPreset does not adjust the stored active index.
 // ==============================================================================
 #include "theme_manager.hpp"
 #include <QJsonDocument>
 
-// Fills the built-in presets and starts with the first one active.
+/**
+ * Builds the 60 built-in presets and makes the first ("Midnight") active.
+ * Private: use ThemeManager::instance().
+ */
 ThemeManager::ThemeManager() {
     initBuiltinPresets();
     m_activeTheme = m_builtinPresets[0];
 }
 
-// Function-local static: created on first use and thread-safe in C++11.
+/**
+ * Singleton accessor. A function-local static is created on first use and, since
+ * C++11, its initialisation is thread-safe.
+ */
 ThemeManager& ThemeManager::instance() {
     static ThemeManager inst;
     return inst;
 }
 
+// Read-only accessors for the preset lists and the active theme.
 const QVector<Theme>& ThemeManager::builtinPresets() const { return m_builtinPresets; }
 const QVector<Theme>& ThemeManager::userPresets() const { return m_userPresets; }
 const Theme& ThemeManager::activeTheme() const { return m_activeTheme; }
@@ -28,7 +50,7 @@ int ThemeManager::activePresetIndex() const { return m_activePresetIndex; }
 bool ThemeManager::isActiveUserPreset() const { return m_isUserPreset; }
 
 // The apply* functions change the active theme and emit themeChanged() so
-// windows re-apply their stylesheet.
+// windows re-apply their stylesheet. Out-of-range indexes are ignored.
 void ThemeManager::applyBuiltinPreset(int index) {
     if (index < 0 || index >= m_builtinPresets.size()) return;
     m_activePresetIndex = index;
@@ -45,13 +67,17 @@ void ThemeManager::applyUserPreset(int index) {
     emit themeChanged();
 }
 
+/** Makes @p theme active without selecting a preset (used for live previews while editing). */
 void ThemeManager::applyTheme(const Theme& theme) {
     m_activeTheme = theme;
     emit themeChanged();
 }
 
-// Appends a copy (auto-named when blank) and returns its index; persisting is a
-// separate saveSettings() call.
+/**
+ * Appends a copy of @p theme to the user presets (auto-named "User Preset N"
+ * when the name is blank) and returns its index. Persisting is a separate
+ * saveSettings() call.
+ */
 int ThemeManager::saveUserPreset(const Theme& theme) {
     Theme t = theme;
     if (t.name.isEmpty()) {
@@ -61,16 +87,23 @@ int ThemeManager::saveUserPreset(const Theme& theme) {
     return m_userPresets.size() - 1;
 }
 
+/** Removes a user preset by index (ignored if out of range). Does not save. */
 void ThemeManager::deleteUserPreset(int index) {
     if (index < 0 || index >= m_userPresets.size()) return;
     m_userPresets.removeAt(index);
 }
 
+/** Renames a user preset (ignored if out of range). Does not save. */
 void ThemeManager::renameUserPreset(int index, const QString& name) {
     if (index < 0 || index >= m_userPresets.size()) return;
     m_userPresets[index].name = name;
 }
 
+/**
+ * Converts a Theme to JSON for storage: one string per colour in "#AARRGGBB"
+ * form (HexArgb keeps the alpha used by percentBarColor) plus the name.
+ * Key names equal the Theme field names and must stay in step with themeFromJson().
+ */
 QJsonObject ThemeManager::themeToJson(const Theme& t) const {
     QJsonObject obj;
     obj["name"] = t.name;
@@ -111,6 +144,10 @@ QJsonObject ThemeManager::themeToJson(const Theme& t) const {
     return obj;
 }
 
+/**
+ * Inverse of themeToJson(). Missing or malformed colour strings become an
+ * invalid QColor rather than an error.
+ */
 Theme ThemeManager::themeFromJson(const QJsonObject& obj) const {
     Theme t;
     t.name = obj["name"].toString();
@@ -151,6 +188,7 @@ Theme ThemeManager::themeFromJson(const QJsonObject& obj) const {
     return t;
 }
 
+/** Writes the active-preset selection and all user presets to QSettings. */
 void ThemeManager::saveSettings() const {
     QSettings settings("SpaceMap", "SpaceMap");
     settings.setValue("theme/activeIndex", m_activePresetIndex);
@@ -163,8 +201,11 @@ void ThemeManager::saveSettings() const {
     settings.setValue("theme/userPresets", QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
 }
 
-// Restore user presets, then the previously active preset; any out-of-range or
-// missing value falls back to built-in preset 0.
+/**
+ * Restores user presets, then the previously active preset; any out-of-range
+ * or missing value falls back to built-in preset 0. Emits themeChanged()
+ * through the apply* call it ends with.
+ */
 void ThemeManager::loadSettings() {
     QSettings settings("SpaceMap", "SpaceMap");
     int idx = settings.value("theme/activeIndex", 0).toInt();
@@ -190,8 +231,16 @@ void ThemeManager::loadSettings() {
     }
 }
 
-// `cn` formats a colour with alpha (#AARRGGBB) and `hex` without alpha; the
-// arguments are substituted positionally (%1, %2, ...) into the template.
+/**
+ * Expands @p t into one Qt stylesheet (QSS) for the main window: window,
+ * labels, progress bar, line edits, combo boxes, buttons, tree view, header
+ * and the "#hudFrame" statistics strip.
+ *
+ * The template uses positional placeholders %1..%38 filled by the .arg() chain
+ * after it; the order of that chain must match the numbers in the template
+ * exactly. (`hex` formats a colour as #RRGGBB, `cn` as #AARRGGBB; cn is
+ * currently unused.)
+ */
 QString ThemeManager::generateStylesheet(const Theme& t) const {
     auto cn = [](const QColor& c) { return c.name(QColor::HexArgb); };
     auto hex = [](const QColor& c) { return c.name(); };
@@ -339,12 +388,21 @@ QString ThemeManager::generateStylesheet(const Theme& t) const {
     .arg(hex(t.hudBorder));      // 38
 }
 
-// Helper macro to reduce repetition for preset initialization
+// ---------------------------------------------------------------------------
+// Built-in presets. Every preset sets every Theme field explicitly (see Theme
+// in theme_manager.hpp for what each field styles). Colours are written as
+// "#RRGGBB" strings; percentBarColor uses QColor(r, g, b, alpha) because it is
+// drawn semi-transparent over the row. Field groups per preset, in order:
+// window/panels, inputs, buttons, text, tree, header, progress bar, menu and
+// delete button. Add a preset by copying a block and appending it here; the
+// list order is the order shown in the theme dialog and the stored
+// activeIndex refers to it, so do not reorder existing entries.
+// ---------------------------------------------------------------------------
+// Convenience macros for table-style presets; the blocks below do not use them.
 #define PRESET(NAME) do { Theme t; t.name = NAME;
 #define END_PRESET m_builtinPresets.append(t); } while(0)
 
-// Each preset assigns every Theme colour explicitly; the first, Midnight, is the
-// default dark theme.
+/** Fills m_builtinPresets with the 60 built-in themes (see the table notes above). */
 void ThemeManager::initBuiltinPresets() {
     m_builtinPresets.clear();
 

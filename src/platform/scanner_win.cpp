@@ -5,14 +5,26 @@
 // work. Paths are kept as UTF-8 inside the program and converted at the API
 // boundary. Reparse points (symlinks, junctions) are skipped. Compiled only on
 // Windows.
+//
+// How it fits: Scanner::scan_directory is declared in scanner.hpp and called by
+// the worker threads in scanner.cpp, one directory at a time. It adds the
+// directory's entries to the TreeNode tree, queues sub-directories as new tasks
+// and returns the totals of the plain files through the reference parameters.
+//
+// Known limits: no device (volume) or loop detection is needed here because
+// reparse points are skipped; a Windows path is limited by the wide-char API
+// (no extended-length path prefix is used).
 // ==============================================================================
 #include "scanner.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #include <string>
 
-// Two-call pattern: first query the required length, then convert; the
-// trailing NUL that the API counts is removed.
+/**
+ * Converts UTF-8 to UTF-16 for the wide Windows API.
+ * Two-call pattern: the first call measures the required length, the second
+ * converts; the trailing NUL that the API counts is then removed.
+ */
 // Helper to convert UTF-8 string to UTF-16 wstring
 static std::wstring utf8_to_utf16(const std::string& utf8) {
     if (utf8.empty()) return L"";
@@ -23,6 +35,7 @@ static std::wstring utf8_to_utf16(const std::string& utf8) {
     return utf16;
 }
 
+/** Converts UTF-16 back to UTF-8 (same two-call pattern; NUL removed). */
 // Helper to convert UTF-16 wstring to UTF-8 string
 static std::string utf16_to_utf8(const std::wstring& utf16) {
     if (utf16.empty()) return "";
@@ -33,6 +46,15 @@ static std::string utf16_to_utf8(const std::wstring& utf16) {
     return utf8;
 }
 
+/**
+ * Lists one directory of the scan (Windows version).
+ * @param current_path     UTF-8 path of the directory.
+ * @param parent_node      Tree node that receives the entries found.
+ * @param dir_files_size   [out] Sum of logical sizes of files directly inside.
+ * @param dir_files_allocated [out] Sum of their on-disk sizes.
+ * @param dir_files_count  [out] Number of files directly inside.
+ * @param dir_subdirs_count [out] Number of sub-directories queued.
+ */
 void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_node,
                              uint64_t& dir_files_size, uint64_t& dir_files_allocated,
                              uint64_t& dir_files_count, uint64_t& dir_subdirs_count) {
@@ -53,10 +75,13 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
     do {
         if (m_cancelled) [[unlikely]] break;
 
+        // FindFirstFileW/FindNextFileW return UTF-16 names; the program keeps UTF-8 internally.
         std::wstring wname = find_data.cFileName;
         if (wname == L"." || wname == L"..") continue;
 
         std::string name = utf16_to_utf8(wname);
+        // Same defensive limits as the POSIX versions: over-long names and control
+        // characters are ignored.
         // Security check: Ignore abnormally long filenames (max 255 bytes)
         if (name.length() > 255) continue;
 
@@ -69,6 +94,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             }
         }
         if (has_invalid_char) continue;
+        // Path used both for the sub-directory task and for the size query below.
         std::string full_path = current_path;
         if (full_path.back() != '\\' && full_path.back() != '/') {
             full_path += "\\" + name;
@@ -76,6 +102,8 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             full_path += name;
         }
 
+        // Junctions and symlinks can create loops or point at other volumes, so
+        // reparse points are skipped entirely.
         // Junctions and symlinks can create loops or point at other volumes.
         // Skip reparse points (symlinks/junctions) to prevent infinite loops
         if (find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -87,9 +115,13 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             add_task(full_path, child);
             dir_subdirs_count++;
         } else {
+            // 64-bit size is delivered as two 32-bit halves.
             uint64_t fsize = (static_cast<uint64_t>(find_data.nFileSizeHigh) << 32) | find_data.nFileSizeLow;
             uint64_t allocated_size = fsize;
 
+            // GetCompressedFileSizeW returns the on-disk size (smaller for NTFS-compressed
+            // or sparse files). It signals failure with INVALID_FILE_SIZE plus a non-zero
+            // last error; on failure the logical size is used instead.
             // GetCompressedFileSizeW returns the on-disk size (smaller for NTFS-compressed
             // or sparse files). On failure the logical size is used instead.
             // Get compressed/allocated size on disk
@@ -100,6 +132,8 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
                 allocated_size = (static_cast<uint64_t>(high_size) << 32) | low_size;
             }
 
+            // File nodes are leaves and carry their own numbers; directory totals come
+            // from the caller's propagate_stats().
             TreeNode* child = parent_node->get_or_create_child(name, false);
             {
                 std::unique_lock<std::shared_mutex> child_lock(child->mutex);
@@ -112,6 +146,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             dir_files_allocated += allocated_size;
             dir_files_count++;
         }
+    // `continue` above jumps to this condition, so skipped entries still advance the enumeration.
     } while (FindNextFileW(find_handle, &find_data));
 
     FindClose(find_handle);
