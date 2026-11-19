@@ -80,24 +80,23 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    // Built-in self-tests run on every start (they use assert(), so they are
-    // active only in non-NDEBUG builds). Failures are reported but non-fatal.
-    // Run TreeNode assertions first
-    try {
-        TreeNode::test_tree_node();
-        Scanner::test_scanner();
-    } catch (const std::exception& e) {
-        std::cerr << "Warning: Self-tests failed to initialize: " << e.what() << "\n";
-    } catch (...) {
-        std::cerr << "Warning: Unknown exception during self-tests." << "\n";
-    }
-
-    // Command-line modes: --test-only runs just the self-tests; --benchmark <path>
-    // scans a path without the GUI and prints throughput; otherwise the Qt GUI starts.
+    // --test-only runs the built-in self-tests and exits. They are NOT run on
+    // normal GUI starts: they use assert() (an abort in non-NDEBUG builds), spawn
+    // threads and write a scratch directory under the system temp folder.
     if (argc > 1 && std::string(argv[1]) == "--test-only") {
+        try {
+            TreeNode::test_tree_node();
+            Scanner::test_scanner();
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: Self-tests failed to initialize: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "Warning: Unknown exception during self-tests." << "\n";
+        }
         return 0;
     }
 
+    // Command-line mode: --benchmark <path> scans a path without the GUI and
+    // prints throughput; otherwise the Qt GUI starts.
     if (argc > 2 && std::string(argv[1]) == "--benchmark") {
         std::string scan_path = argv[2];
         std::cout << "Starting benchmark scan on: " << scan_path << "..." << "\n";
