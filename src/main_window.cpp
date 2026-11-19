@@ -3,6 +3,24 @@
 // Programmer: Ethan-da-Tech-Wizard
 // Last Modified: November 18, 2026
 // Purpose: Main GUI window, layout styling, tree views, context menus, and trash tools
+//
+// How it fits: main() creates one MainWindow. It owns the Scanner (background
+// crawler, scanner.cpp), the FileTreeModel (adapter for the results,
+// file_tree_model.cpp) and all widgets, and styles itself from the singleton
+// ThemeManager (theme_manager.cpp). The scanner's worker threads never touch
+// widgets: they only update atomic counters, and a 200 ms QTimer on the GUI
+// thread reads those counters to refresh the HUD and progress bar.
+//
+// Scan lifecycle: onScanClicked -> Scanner::start -> (timer ticks) ->
+// Scanner::finished -> onScanFinished (hand the tree to the model, sort by
+// size, enable deletion tools). Deleting moves the file to the trash and then
+// fixes up the totals in memory; no rescan is needed.
+//
+// Linux extras: the drive list is built from `lsblk -J` (so unmounted
+// partitions can be offered) and selecting one runs `udisksctl mount`.
+//
+// Known limits: the tree is only shown once the scan has finished (the model
+// has no root while scanning); getAbsoluteNodePath assumes POSIX-style names.
 // ==============================================================================
 #include "main_window.hpp"
 #include "theme_dialog.hpp"
@@ -23,19 +41,26 @@
 #include <QProcess>
 
 
-// Construct the scanner and model, a timer that will refresh the HUD during
-// scans, then build the UI, load the saved theme and subscribe to theme changes.
-// The tree model starts with no root; it is given the scan result later.
+/**
+ * Creates the scanner, model and refresh timer, builds the UI, loads the saved
+ * theme and subscribes to theme changes. The model starts with no root; the
+ * scan result is attached later by onScanFinished().
+ * @param parent Optional parent widget.
+ */
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_scanner = new Scanner(this);
     m_treeModel = new FileTreeModel(nullptr, this);
 
+    // The timer is only started during a scan; see onScanClicked/onScanFinished.
     m_guiTimer = new QTimer(this);
     connect(m_guiTimer, &QTimer::timeout, this, &MainWindow::onUpdateTimer);
 
+    // Below this size the two-row control area and the HUD would start to clip.
     setMinimumSize(800, 600);
     setupUi();
 
+    // Theme must be loaded before the first stylesheet is generated; the
+    // connection to themeChanged is made afterwards so loading does not trigger a second restyle.
     // Load saved theme or apply default
     ThemeManager::instance().loadSettings();
     applyDarkTheme();
@@ -45,9 +70,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     updateControls();
 }
 
-// Layout, top to bottom: drive/path inputs and scan buttons, progress bar,
-// the results tree (takes all spare height) and a bottom HUD of statistics.
-// Signals are connected at the end of this function.
+/**
+ * Builds every widget and layout and wires the signals.
+ * Layout, top to bottom: drive/path inputs and scan buttons, progress bar,
+ * the results tree (takes all spare height) and a bottom HUD of statistics.
+ */
 void MainWindow::setupUi() {
     setWindowTitle("SpaceMap - C++ High-Speed Disk Analyzer");
 
@@ -58,8 +85,8 @@ void MainWindow::setupUi() {
     mainLayout->setContentsMargins(10, 10, 10, 10);
     mainLayout->setSpacing(10);
 
+    // Top bar: two rows, so it does not squeeze on narrow windows.
     // ================= TOP BAR (SCAN CONTROLS) =================
-    // A clean, structured 2-row layout to prevent squishing on smaller windows
     QVBoxLayout* controlLayout = new QVBoxLayout();
     controlLayout->setSpacing(8);
 
@@ -80,6 +107,7 @@ void MainWindow::setupUi() {
 
     m_browseBtn = new QPushButton(tr("Browse..."), this);
 
+    // Grid: column 0 labels, column 1 inputs (stretches), column 2 action buttons.
     inputGrid->addWidget(driveLabel, 0, 0);
     inputGrid->addWidget(m_driveComboBox, 0, 1);
     inputGrid->addWidget(m_refreshDrivesBtn, 0, 2);
@@ -107,6 +135,7 @@ void MainWindow::setupUi() {
     buttonBar->addWidget(m_scanBtn);
     buttonBar->addWidget(m_pauseBtn);
     buttonBar->addWidget(m_cancelBtn);
+    // Spacer pushes the layout-customisation and delete-mode buttons to the right edge.
     buttonBar->addStretch(1); // Push the right-side buttons to the right
     buttonBar->addWidget(m_customizeBtn);
     buttonBar->addWidget(m_deleteToggleBtn);
@@ -115,6 +144,7 @@ void MainWindow::setupUi() {
 
     mainLayout->addLayout(controlLayout);
 
+    // Progress bar: shows scanner.progress_percentage() while scanning (see onUpdateTimer).
     // ================= PROGRESS BAR (ACCURATE LOADING) =================
     m_progressBar = new QProgressBar(this);
     m_progressBar->setValue(0);
@@ -122,6 +152,8 @@ void MainWindow::setupUi() {
     m_progressBar->setFormat(tr("Idle - 0%"));
     mainLayout->addWidget(m_progressBar);
 
+    // Results tree. Column 1 is drawn by PercentDelegate (a bar), the others
+    // use the model's text. Interactive resize lets users widen columns.
     // ================= CENTRAL AREA (TREE VIEW) =================
     m_treeView = new QTreeView(this);
     m_treeView->setModel(m_treeModel);
@@ -138,6 +170,8 @@ void MainWindow::setupUi() {
     
     mainLayout->addWidget(m_treeView, 1); // Tree view occupies all available vertical space
 
+    // HUD (head-up display) strip at the bottom: object name "hudFrame" is the
+    // hook the theme stylesheet uses to style it.
     // ================= BOTTOM BAR (HUD STATS) =================
     QFrame* hudFrame = new QFrame(this);
     hudFrame->setObjectName("hudFrame");
@@ -162,6 +196,7 @@ void MainWindow::setupUi() {
 
     mainLayout->addWidget(hudFrame);
 
+    // Wire the controls; the scanner's own signal is connected at the end.
     // Connect control events
     connect(m_driveComboBox, QOverload<int>::of(&QComboBox::activated), this, &MainWindow::onDriveSelected);
     connect(m_refreshDrivesBtn, &QPushButton::clicked, this, &MainWindow::refreshDrivesList);
@@ -172,9 +207,9 @@ void MainWindow::setupUi() {
     connect(m_deleteToggleBtn, &QPushButton::toggled, this, &MainWindow::onDeleteToggleToggled);
     connect(m_customizeBtn, &QPushButton::clicked, this, &MainWindow::onCustomizeLayoutClicked);
 
-    // The Delete shortcut is bound to the tree view only (WidgetShortcut) and stays
-    // disabled until the user explicitly enables deletion.
-    // Setup Custom Context Menu and Delete action shortcut on QTreeView
+    // The Delete shortcut is bound to the tree view only (WidgetShortcut) so it
+    // cannot fire while typing in the path box, and stays disabled until the
+    // user explicitly enables deletion.
     m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_treeView, &QTreeView::customContextMenuRequested, this, &MainWindow::onCustomContextMenuRequested);
 
@@ -185,9 +220,9 @@ void MainWindow::setupUi() {
     connect(m_deleteAction, &QAction::triggered, this, &MainWindow::onDeleteActionTriggered);
     m_treeView->addAction(m_deleteAction);
 
-    // Resizing is deferred with a zero-delay timer so it runs after the view has
-    // finished expanding/collapsing and the new row widths are known.
-    // Auto-resize Column 0 on expand/collapse to handle deep folder clipping
+    // Column 0 holds the deeply indented names, so after every expand/collapse
+    // it is re-fitted. The call is deferred with a zero-delay timer so it runs
+    // after the view has finished expanding/collapsing and new row widths are known.
     connect(m_treeView, &QTreeView::expanded, this, [this](const QModelIndex&) {
         QTimer::singleShot(0, this, [this]() {
             m_treeView->resizeColumnToContents(0);
@@ -199,22 +234,27 @@ void MainWindow::setupUi() {
         });
     });
 
+    // finished() is emitted from a worker thread when the scan completes on its own; Qt then queues the call onto the GUI thread.
     // Connect scanner finish
     connect(m_scanner, &Scanner::finished, this, &MainWindow::onScanFinished);
 
+    // Populate the drive combo box once at start-up.
     // Initial drive listing
     refreshDrivesList();
 }
 
+/** Regenerates and applies the stylesheet for the active theme (the name predates theming). */
 void MainWindow::applyDarkTheme() {
     // Apply theme from ThemeManager
     const Theme& t = ThemeManager::instance().activeTheme();
     setStyleSheet(ThemeManager::instance().generateStylesheet(t));
 }
 
-// Single place that derives button states from the scanner state: inputs and
-// Scan are available only when idle, Pause (relabelled Resume) and Cancel only
-// while running, and deletion is locked out during a scan.
+/**
+ * Derives button states from the scanner state in ONE place: inputs and Scan
+ * are available only when idle, Pause (relabelled Resume) and Cancel only
+ * while running, and deletion is locked out during a scan.
+ */
 void MainWindow::updateControls() {
     bool run = m_scanner->running();
     bool pause = m_scanner->paused();
@@ -230,6 +270,8 @@ void MainWindow::updateControls() {
     
     m_cancelBtn->setEnabled(run);
 
+    // Deleting while a scan is writing the tree would race; the toggle is
+    // forced off-limits until the scan ends, then restored to the user's choice.
     if (run) {
         m_deleteToggleBtn->setEnabled(false);
         m_deleteAction->setEnabled(false);
@@ -239,16 +281,24 @@ void MainWindow::updateControls() {
     }
 }
 
-// Update the HUD labels. Used/free come from the volume (capacity - free);
-// only if the volume figures are unavailable is the scanned byte count used.
-// The free percentage is computed as 100 - used so the two always add up to
-// exactly 100.0% after rounding.
+/**
+ * Updates the Files/Folders/Used/Free labels.
+ * Capacity and free space come from the volume (statvfs), so "used" includes
+ * data outside the scanned folder; only if those figures are unavailable is
+ * the scanned byte count used. The free percentage is computed as 100 - used
+ * so the two always add up to exactly 100.0 % after rounding.
+ * @param files Files counted so far.
+ * @param dirs  Folders counted so far.
+ * @param bytes Logical bytes counted so far.
+ */
 void MainWindow::updateStatsHUD(uint64_t files, uint64_t dirs, uint64_t bytes) {
     m_filesLabel->setText(QString("Files: %1").arg(QLocale::system().toString(static_cast<qlonglong>(files))));
     m_dirsLabel->setText(QString("Folders: %1").arg(QLocale::system().toString(static_cast<qlonglong>(dirs))));
 
     uint64_t total_capacity = m_scanner->total_capacity_bytes();
     uint64_t free_space = m_scanner->free_bytes();
+    // If free > capacity (odd filesystems) fall back to the scanned bytes
+    // instead of letting the subtraction wrap around (unsigned).
     uint64_t used_space = total_capacity >= free_space ? (total_capacity - free_space) : bytes;
 
     double pct_used = 0.0;
@@ -256,6 +306,7 @@ void MainWindow::updateStatsHUD(uint64_t files, uint64_t dirs, uint64_t bytes) {
 
     if (total_capacity > 0) {
         double raw_used_pct = (static_cast<double>(used_space) / static_cast<double>(total_capacity)) * 100.0;
+        // Round to one decimal first so the displayed numbers add up.
         pct_used = std::round(raw_used_pct * 10.0) / 10.0;
         if (pct_used > 100.0) pct_used = 100.0;
         if (pct_used < 0.0) pct_used = 0.0;
@@ -271,6 +322,7 @@ void MainWindow::updateStatsHUD(uint64_t files, uint64_t dirs, uint64_t bytes) {
         .arg(QString::number(pct_free, 'f', 1)));
 }
 
+/** Opens a folder picker starting at the current path and copies the choice into the path box. */
 void MainWindow::onBrowseClicked() {
     QString path = QFileDialog::getExistingDirectory(this, tr("Select Directory to Scan"), m_pathEdit->text());
     if (!path.isEmpty()) {
@@ -278,14 +330,18 @@ void MainWindow::onBrowseClicked() {
     }
 }
 
-// Begin a scan of the path in the box. The model's root is cleared (after
-// start() created the new tree) so the view does not show stale pointers, and
-// the 200 ms timer begins refreshing the display.
+/**
+ * Begins a scan of the path in the box.
+ * Scanner::start() creates the new tree (and frees the old one) so the model's
+ * root is cleared right after, otherwise the view would hold pointers to freed
+ * nodes. The 200 ms timer then refreshes the HUD until finished() arrives.
+ */
 void MainWindow::onScanClicked() {
     QString path = m_pathEdit->text();
     if (path.isEmpty()) return;
 
     m_treeView->setSortingEnabled(false);
+// Disable sorting before data changes; it is re-enabled when the scan ends.
 
     m_statusLabel->setText(tr("Status: Scanning..."));
     m_progressBar->setValue(0);
@@ -298,7 +354,7 @@ void MainWindow::onScanClicked() {
     updateControls();
 }
 
-// Toggles between pause and resume.
+/** Toggles between pause and resume; the button label follows via updateControls(). */
 void MainWindow::onPauseClicked() {
     if (m_scanner->paused()) {
         m_statusLabel->setText(tr("Status: Scanning..."));
@@ -310,21 +366,26 @@ void MainWindow::onPauseClicked() {
     updateControls();
 }
 
+/** Requests cancellation; the scanner then emits finished(), which runs onScanFinished(). */
 void MainWindow::onCancelClicked() {
     m_statusLabel->setText(tr("Status: Cancelling..."));
     m_scanner->cancel();
     updateControls();
 }
 
-// Scan ended (complete, cancelled or empty): stop the timer, hand the finished
-// tree to the model, sort by size descending, collapse to the top level, size
-// the columns, then set status text according to the outcome.
+/**
+ * Scan ended (complete, cancelled or empty): stops the timer, hands the
+ * finished tree to the model, sorts by size descending, collapses to the top
+ * level, sizes the columns and sets the status text for the outcome.
+ */
 void MainWindow::onScanFinished() {
     m_guiTimer->stop();
 
     TreeNode* root = m_scanner->root_node();
     m_treeModel->setRootNode(root);
 
+    // Setting the indicator first means enabling sorting sorts exactly once
+    // (size, descending) rather than by the previous indicator and again.
     // Set sort indicator first to prevent redundant sorting when enabling sorting
     m_treeView->header()->setSortIndicator(2, Qt::DescendingOrder);
     m_treeView->setSortingEnabled(true);
@@ -353,10 +414,11 @@ void MainWindow::onScanFinished() {
     updateControls();
 }
 
-// Runs on the GUI thread every 200 ms: tells the view the data changed and
-// refreshes progress and counters from the scanner's atomic values.
+/**
+ * Timer slot (GUI thread, every 200 ms while scanning): tells the view the
+ * data changed and refreshes progress and counters from the scanner's atomics.
+ */
 void MainWindow::onUpdateTimer() {
-    // Inform model that data changed to update QTreeView in real-time
     m_treeModel->layoutChanged();
 
     // Update neon sky blue progress bar value
@@ -365,9 +427,12 @@ void MainWindow::onUpdateTimer() {
     updateStatsHUD(m_scanner->files_scanned(), m_scanner->dirs_scanned(), m_scanner->bytes_scanned());
 }
 
-// Deletion is opt-in. Turning it on shows a warning dialog defaulting to "No";
-// declining unchecks the button again without re-triggering this slot
-// (signals are blocked while resetting it).
+/**
+ * Delete-mode switch. Turning it on shows a warning dialog defaulting to
+ * "No"; declining unchecks the button again without re-triggering this slot
+ * (its signals are blocked while resetting it).
+ * @param checked New state of the toggle button.
+ */
 void MainWindow::onDeleteToggleToggled(bool checked) {
     if (checked) {
         QMessageBox::StandardButton reply = QMessageBox::warning(
@@ -397,14 +462,19 @@ void MainWindow::onDeleteToggleToggled(bool checked) {
     }
 }
 
-// Right-click menu with a single "Delete to Trash" entry, enabled only when
-// deletion mode is on; styled from the active theme.
+/**
+ * Right-click menu with a single "Delete to Trash" entry, enabled only while
+ * deletion mode is on; styled from the active theme.
+ * @param pos Click position in the tree viewport's coordinates.
+ */
 void MainWindow::onCustomContextMenuRequested(const QPoint& pos) {
     QModelIndex index = m_treeView->indexAt(pos);
     if (!index.isValid()) return;
 
     QMenu menu(this);
     const Theme& t = ThemeManager::instance().activeTheme();
+    // QMenu is a top-level popup that does not inherit the main stylesheet's
+    // look reliably, so it gets its own theme-derived stylesheet.
     menu.setStyleSheet(QString(R"(
         QMenu {
             background-color: %1;
@@ -433,8 +503,12 @@ void MainWindow::onCustomContextMenuRequested(const QPoint& pos) {
     menu.exec(m_treeView->viewport()->mapToGlobal(pos));
 }
 
-// Reconstruct the full path by joining names from the node up to the root,
-// then collapse any doubled slashes.
+/**
+ * Rebuilds the full filesystem path of a node by joining names from the node
+ * up to the root. The root node's name IS the scanned path, so a "/" root
+ * contributes just a leading slash.
+ * @return Absolute path, or an empty string for a null node.
+ */
 QString MainWindow::getAbsoluteNodePath(TreeNode* node) {
     if (!node) return QString();
     std::string path = node->name;
@@ -447,7 +521,7 @@ QString MainWindow::getAbsoluteNodePath(TreeNode* node) {
         }
         curr = curr->parent;
     }
-    // Clean up double slashes
+    // Joining a root such as "/home/" with names can produce "//"; collapse them.
     size_t pos;
     while ((pos = path.find("//")) != std::string::npos) {
         path.replace(pos, 2, "/");
@@ -455,8 +529,11 @@ QString MainWindow::getAbsoluteNodePath(TreeNode* node) {
     return QString::fromStdString(path);
 }
 
-// Subtract from the node and every ancestor, clamping at zero so a mismatch
-// can never underflow the unsigned counters.
+/**
+ * Subtracts the removed amounts from @p start_node and every ancestor after a
+ * delete. Each counter is clamped at zero so a mismatch can never underflow
+ * the unsigned values and show enormous sizes.
+ */
 void MainWindow::propagate_deletion_stats(TreeNode* start_node, uint64_t size_removed, uint64_t allocated_removed, uint64_t files_removed, uint64_t dirs_removed) {
     TreeNode* current = start_node;
     while (current != nullptr) {
@@ -476,11 +553,14 @@ void MainWindow::propagate_deletion_stats(TreeNode* start_node, uint64_t size_re
     }
 }
 
-// Guarded delete: refuse during a scan, for the root itself, when deletion is
-// disabled, if the path vanished or is a symlink, and ask for confirmation.
-// Items go to the Trash (QFile::moveToTrash), never permanently deleted. On
-// success the node is removed from the model and the totals of all ancestors
-// and the scanner's counters are reduced by the removed amounts.
+/**
+ * Delete selected item to the trash (guarded).
+ * Refuses: during a scan, for the root folder itself, when deletion is not
+ * enabled, if the path vanished, or if it is a symlink. Asks for confirmation
+ * (default No). Items go to the Trash (QFile::moveToTrash), never permanently
+ * deleted. On success the node is removed from the model and the totals of all
+ * ancestors and the scanner's counters are reduced by the removed amounts.
+ */
 void MainWindow::onDeleteActionTriggered() {
     if (m_scanner->running()) {
         QMessageBox::warning(this, tr("Delete Error"), tr("<font color='black'>Cannot delete files while scanning is active. Please wait for the scan to finish or cancel it first.</font>"));
@@ -517,6 +597,8 @@ void MainWindow::onDeleteActionTriggered() {
     }
 
     QMessageBox::StandardButton reply = QMessageBox::question(
+        // Capture the numbers BEFORE removeNode(): erasing the node destroys it.
+        // A deleted directory also removes itself, hence dir_count + 1.
         this,
         tr("Confirm Delete"),
         tr("<font color='black'>Are you sure you wish to delete this %1?<br>Path: %2<br><br>It will be moved to the recycle bin/trash.</font>")
@@ -553,10 +635,13 @@ void MainWindow::onDeleteActionTriggered() {
     }
 }
 
-// Fill the drive combo box. On Linux it first tries `lsblk -J` (which also
-// lists unmounted partitions); otherwise (or if that fails) it falls back to
-// QStorageInfo's mounted volumes, skipping virtual filesystems. Signals are
-// blocked while repopulating so this does not trigger onDriveSelected.
+/**
+ * Fills the drive combo box. On Linux it first tries `lsblk -J` (which also
+ * lists unmounted partitions); otherwise (or if that fails) it falls back to
+ * QStorageInfo's mounted volumes, skipping virtual filesystems. Signals are
+ * blocked while repopulating so this does not trigger onDriveSelected.
+ * Item data: the mount point, or "device:<path>" for unmounted partitions.
+ */
 void MainWindow::refreshDrivesList() {
     m_driveComboBox->blockSignals(true);
     m_driveComboBox->clear();
@@ -581,7 +666,7 @@ void MainWindow::refreshDrivesList() {
     }
 #endif
 
-    // Fall back to QStorageInfo if lsblk wasn't used or failed
+    // Fallback: also used on macOS and Windows, where lsblk does not exist.
     if (!parsedWithLsblk) {
         QList<QStorageInfo> volumes = QStorageInfo::mountedVolumes();
         
@@ -637,7 +722,6 @@ void MainWindow::refreshDrivesList() {
     }
 
     // Prefer "/" as the default drive, otherwise the first entry.
-    // Set default selection (System Root /) if available
     int rootIndex = -1;
     for (int i = 0; i < m_driveComboBox->count(); ++i) {
         QString data = m_driveComboBox->itemData(i).toString();
@@ -663,8 +747,7 @@ void MainWindow::refreshDrivesList() {
     m_driveComboBox->blockSignals(false);
 }
 
-// Recursively visit lsblk output; only leaf devices (no children) are treated
-// as partitions.
+/** Recursively visits lsblk's JSON; only leaf devices (no children) are treated as partitions. */
 void MainWindow::parseBlockDevices(const QJsonArray& devices) {
     for (const QJsonValue& devVal : devices) {
         QJsonObject devObj = devVal.toObject();
@@ -677,9 +760,11 @@ void MainWindow::parseBlockDevices(const QJsonArray& devices) {
     }
 }
 
-// Add one lsblk entry: skip unformatted and virtual filesystems; mounted ones
-// carry their mount point as item data, unmounted ones are marked
-// "device:<path>" so selecting them triggers a mount attempt.
+/**
+ * Adds one lsblk entry to the combo box: skips unformatted and virtual
+ * filesystems; mounted ones carry their mount point as item data, unmounted
+ * ones are marked "device:<path>" so selecting them triggers a mount attempt.
+ */
 void MainWindow::processPartition(const QJsonObject& partObj) {
     QString name = partObj["name"].toString();
     QString fstype = partObj["fstype"].toString();
@@ -725,8 +810,12 @@ void MainWindow::processPartition(const QJsonObject& partObj) {
     }
 }
 
-// Selecting a mounted drive fills the path box. Selecting an unmounted device
-// tries `udisksctl mount`, then a read-only retry, and refreshes the list.
+/**
+ * Slot for the drive combo box. Selecting a mounted drive fills the path box.
+ * Selecting an unmounted device tries `udisksctl mount`, then a read-only
+ * retry, and refreshes the list. Blocks the GUI up to 8 s per attempt.
+ * @param index Combo box row.
+ */
 void MainWindow::onDriveSelected(int index) {
     if (index < 0 || index >= m_driveComboBox->count()) return;
     QString pathData = m_driveComboBox->itemData(index).toString();
@@ -738,7 +827,8 @@ void MainWindow::onDriveSelected(int index) {
         m_statusLabel->setText(tr("Status: Mounting %1...").arg(devicePath));
         qApp->processEvents();
 
-        // 1. Try mounting normally via udisksctl
+        // 1. Normal mount (udisksctl needs no root for removable and internal drives
+        // on typical desktops via polkit).
         QProcess mountProc;
         mountProc.start("udisksctl", QStringList() << "mount" << "-b" << devicePath);
         if (!mountProc.waitForFinished(8000)) {
@@ -751,7 +841,7 @@ void MainWindow::onDriveSelected(int index) {
         QString errOutput = QString::fromUtf8(mountProc.readAllStandardError()).trimmed();
         bool success = (mountProc.exitCode() == 0);
 
-        // 2. If it fails, try read-only fallback mount (extremely useful for dirty NTFS logs)
+        // 2. Read-only retry: a dirty NTFS volume refuses a normal mount.
         if (!success) {
             mountProc.start("udisksctl", QStringList() << "mount" << "-b" << devicePath << "-o" << "ro");
             if (mountProc.waitForFinished(8000)) {
@@ -761,8 +851,9 @@ void MainWindow::onDriveSelected(int index) {
             }
         }
 
+        // udisksctl prints "Mounted /dev/sda1 at /run/media/user/LABEL"; the path
+        // after " at " is the new mount point.
         if (success) {
-            // Find the mount point from the output, e.g. "Mounted /dev/sda1 at /run/media/user/54BE3B12BE3AEC5C"
             int atIndex = output.indexOf(" at ");
             if (atIndex != -1) {
                 QString mountPath = output.mid(atIndex + 4).trimmed();
@@ -784,7 +875,6 @@ void MainWindow::onDriveSelected(int index) {
             }
         }
 
-        // Display detailed error dialog if mount failed completely
         QMessageBox::critical(this, tr("Mount Failed"), 
             tr("<font color='black'>Failed to mount device %1.<br><br><b>Error:</b><br>%2</font>")
                 .arg(devicePath)
@@ -796,11 +886,13 @@ void MainWindow::onDriveSelected(int index) {
     }
 }
 
+/** Opens the modal theme editor (ThemeDialog); changes arrive through ThemeManager::themeChanged. */
 void MainWindow::onCustomizeLayoutClicked() {
     ThemeDialog dialog(this);
     dialog.exec();
 }
 
+/** Re-applies the stylesheet when the theme changes. */
 void MainWindow::onThemeChanged() {
     applyDarkTheme();
 }

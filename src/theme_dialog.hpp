@@ -17,11 +17,15 @@
 #include <QGridLayout>
 #include "theme_manager.hpp"
 
+/** Modal "Customize Layout" dialog; see theme_dialog.cpp for the data flow. */
 class ThemeDialog : public QDialog {
     Q_OBJECT
 public:
+    /** @param parent Main window, restyled live while the dialog is open. */
     explicit ThemeDialog(QWidget* parent = nullptr);
 
+// Slots: preset card clicked, colour swatch clicked, hex box edited, "+ Save
+// Current Theme" clicked, Reset clicked.
 private slots:
     void onPresetClicked(int index, bool isUserPreset);
     void onColorButtonClicked(const QString& fieldName);
@@ -58,6 +62,7 @@ private:
 
     QLabel* m_helpBanner = nullptr;
 
+    // Which preset card is highlighted: its index and whether it is in the user list.
     int m_selectedPresetIndex = 0;
     bool m_selectedIsUser = false;
 };

@@ -3,6 +3,24 @@
 //
 // Colour edits are applied immediately (live preview on the parent window via
 // ThemeManager). The dialog remembers the theme that was active when it was
+//
+// How it fits: MainWindow::onCustomizeLayoutClicked creates a modal
+// ThemeDialog and calls exec(). The dialog is a view over ThemeManager (see
+// theme_manager.cpp): picking a preset or editing a colour calls
+// ThemeManager::applyTheme/applyBuiltinPreset/applyUserPreset, which emits
+// themeChanged(), and the main window restyles itself. Edits are kept in
+// m_editingTheme (a working copy); m_originalTheme is what "Reset" restores.
+//
+// Data flow for one colour edit: colour button or hex box -> getColorRef()
+// writes the matching field of m_editingTheme -> applyEditingTheme() ->
+// ThemeManager -> stylesheet regenerated for the parent window.
+// The row widgets are generic: they are keyed by the Theme FIELD NAME string
+// (e.g. "windowBg"), which must match getColorRef(), getFieldHelpText() and
+// the JSON keys in theme_manager.cpp.
+//
+// Known limits: the dialog's own stylesheet is dark and fixed (applyDialogStyle),
+// independent of the active theme. User presets can be saved, renamed and
+// deleted; built-in presets are read-only.
 // opened so "Reset" can restore it.
 // ==============================================================================
 #include "theme_dialog.hpp"
@@ -14,7 +32,11 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QScrollBar>
-
+/**
+ * Snapshots the active theme as both the original and the working copy and
+ * builds the UI.
+ * @param parent Main window; it is restyled live while the dialog is open.
+ */
 // Snapshot the active theme as both the original and the working copy.
 ThemeDialog::ThemeDialog(QWidget* parent) : QDialog(parent) {
     m_originalTheme = ThemeManager::instance().activeTheme();
@@ -27,6 +49,11 @@ ThemeDialog::ThemeDialog(QWidget* parent) : QDialog(parent) {
     loadThemeIntoEditor(m_editingTheme);
 }
 
+/**
+ * Builds the two-pane layout: preset cards on the left, one colour row per
+ * Theme field on the right, Reset and Close at the bottom. Close persists the
+ * theme settings (QSettings) before accepting.
+ */
 void ThemeDialog::setupUi() {
     setWindowTitle(tr("Customize Layout"));
     resize(860, 580);
@@ -81,6 +108,8 @@ void ThemeDialog::setupUi() {
     editorLayout->setSpacing(4);
     editorLayout->setContentsMargins(6, 6, 6, 6);
 
+    // Colour rows are grouped exactly like the fields in struct Theme
+    // (theme_manager.hpp); each row is (label shown, Theme field name).
     // Window & Panels
     addColorSection(editorLayout, "Window & Panels");
     addColorRow(editorLayout, "Window Background", "windowBg");
@@ -166,17 +195,20 @@ void ThemeDialog::setupUi() {
     bottomBar->addWidget(closeBtn);
     outerLayout->addLayout(bottomBar);
 
-    // Re-set layout on dialog since we wrapped mainLayout
+    // The layout built above was assigned to a local; replace the dialog's
+    // default (empty) layout with the outer one that also contains the bottom bar.
     delete layout();
     setLayout(outerLayout);
 
     connect(resetBtn, &QPushButton::clicked, this, &ThemeDialog::onReset);
+    // Close = keep what is applied and write it to settings.
     connect(closeBtn, &QPushButton::clicked, this, [this]() {
         ThemeManager::instance().saveSettings();
         accept();
     });
 }
 
+/** Applies a fixed dark stylesheet to the dialog itself (readable whatever theme is being edited). */
 void ThemeDialog::applyDialogStyle() {
     setStyleSheet(R"(
         QDialog {
@@ -319,6 +351,11 @@ void ThemeDialog::applyDialogStyle() {
     )");
 }
 
+/**
+ * Rebuilds the grid of preset cards after any change: built-in presets (two
+ * per row), a separator, the user presets, then the "+ Save Current Theme"
+ * button. The scroll position is restored afterwards so the view does not jump.
+ */
 void ThemeDialog::rebuildPresetGrid() {
     int scrollPos = m_presetScroll ? m_presetScroll->verticalScrollBar()->value() : 0;
 
@@ -372,9 +409,20 @@ void ThemeDialog::rebuildPresetGrid() {
     }
 }
 
+/**
+ * Creates one clickable preset card: five sample swatches (window, selection,
+ * progress, button, text colours) and the name. User presets also get a "[User]"
+ * badge, a delete button and a right-click menu (rename/delete); built-in cards
+ * are not removable.
+ * @param theme        Theme to preview.
+ * @param index        Index within its list (built-in or user).
+ * @param isUserPreset Which list the index refers to.
+ * @return The card widget (owned by m_presetContainer).
+ */
 QWidget* ThemeDialog::createPresetCard(const Theme& theme, int index, bool isUserPreset) {
     QPushButton* card = new QPushButton(m_presetContainer);
 
+    // The active card gets a different object name so the stylesheet can highlight it.
     bool isActive = (index == m_selectedPresetIndex && isUserPreset == m_selectedIsUser);
     card->setObjectName(isActive ? "presetCardActive" : "presetCard");
 
@@ -438,6 +486,8 @@ QFrame* swatchRowContainer = new QFrame(card);
         headerRow->addWidget(delBtn);
         cardLayout->addLayout(headerRow);
 
+        // Deleting keeps the selection valid: if the selected preset was removed fall
+        // back to built-in 0, if one before it was removed shift the index down.
         connect(delBtn, &QPushButton::clicked, this, [this, index]() {
             ThemeManager::instance().deleteUserPreset(index);
             ThemeManager::instance().saveSettings();
@@ -456,6 +506,7 @@ QFrame* swatchRowContainer = new QFrame(card);
         onPresetClicked(index, isUserPreset);
     });
 
+    // Right-click menu for user presets only.
     // Right-click context menu for user presets
     if (isUserPreset) {
         card->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -500,14 +551,17 @@ QFrame* swatchRowContainer = new QFrame(card);
     return card;
 }
 
+/** Adds a bold section title row to the editor. */
 void ThemeDialog::addColorSection(QVBoxLayout* layout, const QString& title) {
     QLabel* header = new QLabel(title);
     header->setObjectName("sectionHeader");
     layout->addWidget(header);
 }
 
-// Plain-language description for each colour field, shown as help text; unknown
-// names get a generic hint.
+/**
+ * Plain-language description for each colour field, shown as tooltips and in the
+ * help banner; unknown names get a generic hint.
+ */
 static QString getFieldHelpText(const QString& fieldName) {
     if (fieldName == "windowBg") return "Changes the main background color of the entire window area.";
     if (fieldName == "panelBg") return "Changes the background color of inner panels and containers.";
@@ -545,6 +599,13 @@ static QString getFieldHelpText(const QString& fieldName) {
     return "Click the color box or type a hex code to customize this visual element.";
 }
 
+/**
+ * Adds one editor row: label, "?" help button, colour swatch button and a hex
+ * text box (max 9 chars = "#AARRGGBB"). Registers the widgets in
+ * m_colorButtons / m_hexInputs under @p fieldName so other code can refresh them.
+ * @param label     Text shown to the user.
+ * @param fieldName Theme field this row edits (e.g. "windowBg").
+ */
 void ThemeDialog::addColorRow(QVBoxLayout* layout, const QString& label, const QString& fieldName) {
     QHBoxLayout* row = new QHBoxLayout();
     row->setSpacing(8);
@@ -580,6 +641,7 @@ void ThemeDialog::addColorRow(QVBoxLayout* layout, const QString& label, const Q
     m_colorButtons[fieldName] = colorBtn;
     m_hexInputs[fieldName] = hexEdit;
 
+    // Shows the field's help text in the banner at the top of the editor.
     auto showHelp = [this, label, helpTip]() {
         if (m_helpBanner) {
             m_helpBanner->setText(QString("💡 <b>%1</b>: %2").arg(label, helpTip));
@@ -607,7 +669,7 @@ void ThemeDialog::addColorRow(QVBoxLayout* layout, const QString& label, const Q
     layout->addLayout(row);
 }
 
-// Copy a theme into the working copy and refresh every swatch and hex box.
+/** Copies @p theme into the working copy and refreshes every swatch and hex box. */
 void ThemeDialog::loadThemeIntoEditor(const Theme& theme) {
     m_editingTheme = theme;
 
@@ -622,7 +684,11 @@ void ThemeDialog::loadThemeIntoEditor(const Theme& theme) {
     }
 }
 
-// Live preview: make the working copy the active theme and restyle the parent.
+/**
+ * Live preview: makes the working copy the active theme and restyles the
+ * parent. (ThemeManager's themeChanged() already restyles the main window; the
+ * explicit setStyleSheet also covers a parent that is not the main window.)
+ */
 void ThemeDialog::applyEditingTheme() {
     ThemeManager::instance().applyTheme(m_editingTheme);
     if (parentWidget()) {
@@ -630,6 +696,7 @@ void ThemeDialog::applyEditingTheme() {
     }
 }
 
+/** Updates one swatch button's background to @p color (ignored if the field has no row). */
 void ThemeDialog::updateColorButton(const QString& fieldName, const QColor& color) {
     if (m_colorButtons.contains(fieldName)) {
         m_colorButtons[fieldName]->setStyleSheet(
@@ -638,7 +705,11 @@ void ThemeDialog::updateColorButton(const QString& fieldName, const QColor& colo
     }
 }
 
-// String-to-member mapping that lets one set of handlers edit all colours.
+/**
+ * Maps a field name to the matching member of m_editingTheme so one set of
+ * handlers can edit any colour. Unknown names fall back to windowBg.
+ * @return Reference into m_editingTheme.
+ */
 QColor& ThemeDialog::getColorRef(const QString& f) {
     if (f == "windowBg") return m_editingTheme.windowBg;
     if (f == "panelBg") return m_editingTheme.panelBg;
@@ -677,6 +748,12 @@ QColor& ThemeDialog::getColorRef(const QString& f) {
     return m_editingTheme.windowBg;
 }
 
+/**
+ * Slot: a preset card was clicked. Loads it into the editor, previews it and
+ * makes it the active preset.
+ * @param index        Index in the built-in or user list.
+ * @param isUserPreset Which list.
+ */
 void ThemeDialog::onPresetClicked(int index, bool isUserPreset) {
     m_selectedPresetIndex = index;
     m_selectedIsUser = isUserPreset;
@@ -697,7 +774,7 @@ void ThemeDialog::onPresetClicked(int index, bool isUserPreset) {
     rebuildPresetGrid();
 }
 
-// Opens the colour picker (with alpha channel) and applies the chosen colour.
+/** Slot: opens the colour picker (with alpha channel) and applies the chosen colour live. */
 void ThemeDialog::onColorButtonClicked(const QString& fieldName) {
     QColor current = getColorRef(fieldName);
     QColor chosen = QColorDialog::getColor(current, this, tr("Pick Color"),
@@ -712,7 +789,7 @@ void ThemeDialog::onColorButtonClicked(const QString& fieldName) {
     }
 }
 
-// Accepts any colour string QColor understands; invalid text is ignored.
+/** Slot: accepts any colour string QColor understands ("#rgb", "#aarrggbb", names); invalid text is ignored and the old colour stays. */
 void ThemeDialog::onHexEditFinished(const QString& fieldName) {
     if (!m_hexInputs.contains(fieldName)) return;
     QString hex = m_hexInputs[fieldName]->text().trimmed();
@@ -724,6 +801,7 @@ void ThemeDialog::onHexEditFinished(const QString& fieldName) {
     }
 }
 
+/** Slot: saves the working copy as a new user preset, selects it and persists settings. */
 void ThemeDialog::onSaveUserPreset() {
     int idx = ThemeManager::instance().saveUserPreset(m_editingTheme);
     m_selectedPresetIndex = idx;
@@ -733,10 +811,17 @@ void ThemeDialog::onSaveUserPreset() {
     rebuildPresetGrid();
 }
 
+/**
+ * Slot: discards edits and restores the theme that was active when the
+ * dialog opened.
+ */
 void ThemeDialog::onReset() {
     m_editingTheme = m_originalTheme;
     loadThemeIntoEditor(m_originalTheme);
     applyEditingTheme();
+    // Note: applyTheme() does not change ThemeManager's preset index, so the
+    // selection read back here is the last preset clicked, which may differ from
+    // the original.
     // Reset to original selection
     m_selectedPresetIndex = ThemeManager::instance().activePresetIndex();
     m_selectedIsUser = ThemeManager::instance().isActiveUserPreset();
