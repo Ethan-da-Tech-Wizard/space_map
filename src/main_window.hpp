@@ -1,3 +1,11 @@
+// ==============================================================================
+// main_window.hpp - the application's main window (SpaceMap GUI).
+//
+// Holds the drive picker, path box, scan controls (scan/pause/cancel), the
+// statistics HUD, the tree view over the scan results, an optional delete
+// mode, and the theme customisation entry point. A QTimer refreshes the HUD
+// while scanning so the worker threads never touch widgets directly.
+// ==============================================================================
 #pragma once
 
 #include <QMainWindow>
@@ -22,6 +30,8 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override = default;
 
+// Slots are the handlers for button clicks, the scanner's finished() signal,
+// the GUI timer, context menu requests, drive selection and theme changes.
 private slots:
     void onBrowseClicked();
     void onScanClicked();
@@ -39,11 +49,16 @@ private slots:
 
 private:
     void setupUi();
+    // Applies the active theme's generated stylesheet (name predates themes).
     void applyDarkTheme();
+    // Enable/disable buttons according to the scanner's running/paused state.
     void updateControls();
     void updateStatsHUD(uint64_t files, uint64_t dirs, uint64_t bytes);
+    // Rebuilds a filesystem path by walking a node's parent chain.
     QString getAbsoluteNodePath(TreeNode* node);
+    // Subtracts the removed amounts from every ancestor after a delete.
     void propagate_deletion_stats(TreeNode* start_node, uint64_t size_removed, uint64_t allocated_removed, uint64_t files_removed, uint64_t dirs_removed);
+    // Linux drive discovery: walks the JSON tree produced by lsblk.
     void parseBlockDevices(const QJsonArray& devices);
     void processPartition(const QJsonObject& partObj);
 
