@@ -1,3 +1,11 @@
+// ==============================================================================
+// scanner_linux.cpp - Linux implementation of Scanner::scan_directory.
+//
+// Like the macOS version (opendir/readdir plus fstatat relative to the
+// directory fd) but it additionally skips virtual filesystems such as /proc and
+// /sys, and prefers the statx() system call when available to fetch only the
+// size and block count it needs. Compiled only on Linux.
+// ==============================================================================
 #include "scanner.hpp"
 #ifdef __linux__
 #include <dirent.h>
@@ -9,6 +17,8 @@
 #include <linux/stat.h>
 #include <cstring>
 
+// Minimal local definitions of struct statx and its flags for toolchains whose
+// headers predate statx (kernel 4.11). Field order and sizes mirror the kernel ABI.
 #ifndef STATX_BASIC_STATS
 struct statx_timestamp {
     __int64_t tv_sec;
@@ -86,6 +96,7 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
         if (entry->d_type == DT_DIR) {
             std::string full_path = current_path == "/" ? "/" + std::string(d_name, name_len)
                                                         : current_path + "/" + d_name;
+            // Pseudo filesystems report huge or meaningless sizes and are not real disk use.
             // Ignore virtual/pseudo-filesystems and root mount points when scanning /
             if (full_path == "/proc" || full_path == "/sys" || full_path == "/dev" || full_path == "/run" ||
                 full_path == "/mnt" || full_path == "/media" || full_path == "/sys/fs/cgroup") {
@@ -115,6 +126,8 @@ void Scanner::scan_directory(const std::string& current_path, TreeNode* parent_n
             uint64_t fsize = 0;
             uint64_t allocated_size = 0;
 
+// statx lets us ask for just STATX_SIZE | STATX_BLOCKS; if the call fails we
+// fall back to fstatat. stx_blocks counts 512-byte units.
 #if defined(SYS_statx)
             struct statx stx;
             // Pass dfd and relative entry name to statx (avoids full path allocation)

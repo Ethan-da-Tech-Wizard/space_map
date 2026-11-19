@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <mutex>
 
+// Directories pre-reserve room for 16 children to avoid early reallocations.
 TreeNode::TreeNode(std::string n, bool dir, TreeNode* p)
     : name(std::move(n)), is_dir(dir), parent(p) {
     if (is_dir) {
@@ -15,6 +16,7 @@ TreeNode::TreeNode(std::string n, bool dir, TreeNode* p)
     }
 }
 
+// Binary search over the name-sorted children under a shared (read) lock.
 TreeNode* TreeNode::find_child(std::string_view child_name) const {
     std::shared_lock lock(mutex);
     auto it = std::lower_bound(children.begin(), children.end(), child_name,
@@ -28,6 +30,8 @@ TreeNode* TreeNode::find_child(std::string_view child_name) const {
 }
 
 TreeNode* TreeNode::get_or_create_child(std::string_view child_name, bool child_is_dir) {
+    // Fast path: most calls find an existing child, and a shared lock lets many
+    // workers do that concurrently.
     // 1. Double-checked locking pattern: first try with a read lock
     {
         std::shared_lock lock(mutex);
@@ -40,6 +44,9 @@ TreeNode* TreeNode::get_or_create_child(std::string_view child_name, bool child_
         }
     }
 
+    // Upgrade to an exclusive lock; the lookup is repeated because another thread
+    // may have inserted the same name between releasing the read lock and getting
+    // the write lock.
     // 2. Not found, acquire write lock
     std::unique_lock lock(mutex);
     
@@ -52,6 +59,8 @@ TreeNode* TreeNode::get_or_create_child(std::string_view child_name, bool child_
         return it->get();
     }
 
+    // `it` is the lower_bound position, so inserting there keeps children sorted
+    // by name.
     // 3. Insert in sorted position
     auto new_node = std::make_unique<TreeNode>(std::string(child_name), child_is_dir, this);
     TreeNode* ptr = new_node.get();
@@ -70,6 +79,7 @@ void TreeNode::propagate_stats(uint64_t size_delta, uint64_t allocated_delta, ui
     }
 }
 
+// Largest first, ties broken alphabetically so the order is deterministic.
 void TreeNode::sort_children_by_size(bool recursive) {
     std::unique_lock lock(mutex);
     std::sort(children.begin(), children.end(),
@@ -87,6 +97,8 @@ void TreeNode::sort_children_by_size(bool recursive) {
     }
 }
 
+// Self-test (called from main() at startup). Uses assert(), so it is only
+// effective in builds without NDEBUG.
 #include <cassert>
 #include <iostream>
 #include <thread>
@@ -127,6 +139,8 @@ void TreeNode::test_tree_node() {
     assert(user->children[0]->name == "file2.txt");
     assert(user->children[1]->name == "file1.txt");
 
+    // Ten threads each add 100 uniquely named files to the same directory; totals
+    // must come out exact, which exercises the locking and atomic propagation.
     // Test multi-threaded insertion safety
     std::vector<std::thread> threads;
     for (int i = 0; i < 10; ++i) {
